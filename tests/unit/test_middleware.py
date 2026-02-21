@@ -13,12 +13,10 @@ import os
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from main import app
 
 # La API Key que usa el app en tests (definida en conftest.py)
 TEST_API_KEY = os.environ["API_KEY"]
-
-# Importar la app DESPUÉS de que conftest haya seteado las env vars
-from main import app
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 

@@ -5,10 +5,10 @@ Registra middlewares, routers y manejadores de error.
 El endpoint WebSocket /ws/interact se añade en el paso 6.
 
 Uso (desarrollo):
-    uv run uvicorn main:app --reload
+    uv run uvicorn main:app --reload --ws wsproto
 
 Uso (producción vía Docker):
-    uv run uvicorn main:app --host 0.0.0.0 --port 8000
+    uv run uvicorn main:app --host 0.0.0.0 --port 8000 --ws wsproto
 """
 
 from contextlib import asynccontextmanager
@@ -81,6 +81,7 @@ if __name__ == "__main__":
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
+        ws="wsproto",
         reload=not settings.is_production,
         log_level=settings.LOG_LEVEL.lower(),
     )

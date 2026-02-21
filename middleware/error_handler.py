@@ -92,7 +92,8 @@ async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     details = "; ".join(
-        f"{'.'.join(str(l) for l in e['loc'])}: {e['msg']}" for e in exc.errors()
+        f"{'.'.join(str(loc_part) for loc_part in e['loc'])}: {e['msg']}"
+        for e in exc.errors()
     )
     return JSONResponse(
         status_code=422,
