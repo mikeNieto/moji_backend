@@ -22,7 +22,10 @@ from db import create_all_tables, init_db
 from middleware.auth import APIKeyMiddleware
 from middleware.error_handler import register_error_handlers
 from middleware.logging import LoggingMiddleware
+from routers.face import router as face_router
 from routers.health import router as health_router
+from routers.memory import router as memory_router
+from routers.users import router as users_router
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -70,7 +73,9 @@ register_error_handlers(app)
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(health_router)
-# Los routers REST de usuarios, memoria y face se añaden en el paso 4.
+app.include_router(users_router)
+app.include_router(memory_router)
+app.include_router(face_router)
 # El endpoint WebSocket /ws/interact se añade en el paso 6.
 
 
