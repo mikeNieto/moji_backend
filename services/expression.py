@@ -105,3 +105,29 @@ def emotion_to_emojis(tag: str) -> list[str]:
     Si el tag no existe, devuelve la lista de "neutral".
     """
     return EMOTION_TO_EMOJIS.get(tag, EMOTION_TO_EMOJIS["neutral"])
+
+
+# ── parse_emojis_tag ──────────────────────────────────────────────────────────
+
+_EMOJIS_TAG_RE = re.compile(r"^\[emojis:([^\]]+)\]\s*", re.IGNORECASE)
+
+
+def parse_emojis_tag(text: str) -> tuple[list[str], str]:
+    """
+    Extrae [emojis:CODE1,CODE2,...] del inicio del texto.
+
+    Los códigos son codepoints Unicode en formato OpenMoji: mayúsculas, guión para
+    ZWJ/variation sequences (p.ej. "1F1EB-1F1F7", "2708-FE0F", "1F600").
+
+    Devuelve (lista_de_codigos, texto_restante).
+    Si no hay tag al inicio, devuelve ([], text sin modificar).
+
+    Ejemplos:
+        parse_emojis_tag("[emojis:1F1EB-1F1F7,2708] Francia")  → (["1F1EB-1F1F7","2708"], "Francia")
+        parse_emojis_tag("Sin tag")                            → ([], "Sin tag")
+    """
+    m = _EMOJIS_TAG_RE.match(text)
+    if not m:
+        return [], text
+    codes = [c.strip().upper() for c in m.group(1).split(",") if c.strip()]
+    return codes, text[m.end() :]

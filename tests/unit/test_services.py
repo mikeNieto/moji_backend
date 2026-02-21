@@ -22,10 +22,11 @@ from services.expression import (
     VALID_TAGS,
     emotion_to_emojis,
     parse_emotion_tag,
+    parse_emojis_tag,
 )
 from services.history import ConversationHistory
 from services.intent import classify_intent
-from services.movement import build_move_sequence
+from services.movement import build_move_sequence, parse_actions_tag
 
 
 # ── Fixture: BD en memoria para ConversationHistory ───────────────────────────
@@ -140,6 +141,88 @@ class TestEmotionToEmojis:
 
     def test_excited_contains_sparkle(self):
         assert "2728" in emotion_to_emojis("excited")
+
+
+# ── build_move_sequence ───────────────────────────────────────────────────────
+
+
+# ── parse_emojis_tag ─────────────────────────────────────────────────────────
+
+
+class TestParseEmojisTag:
+    def test_basic_extraction(self):
+        codes, remaining = parse_emojis_tag("[emojis:1F1EB-1F1F7,2708] Francia")
+        assert codes == ["1F1EB-1F1F7", "2708"]
+        assert remaining == "Francia"
+
+    def test_no_tag_returns_empty(self):
+        codes, remaining = parse_emojis_tag("Sin tag")
+        assert codes == []
+        assert remaining == "Sin tag"
+
+    def test_single_code(self):
+        codes, _ = parse_emojis_tag("[emojis:1F600] Texto")
+        assert codes == ["1F600"]
+
+    def test_codes_uppercased(self):
+        codes, _ = parse_emojis_tag("[emojis:1f600,1f525]")
+        assert codes == ["1F600", "1F525"]
+
+    def test_empty_string(self):
+        codes, remaining = parse_emojis_tag("")
+        assert codes == []
+        assert remaining == ""
+
+    def test_case_insensitive_tag(self):
+        codes, _ = parse_emojis_tag("[EMOJIS:2708] Avión")
+        assert codes == ["2708"]
+
+    def test_three_codes(self):
+        codes, _ = parse_emojis_tag("[emojis:1F3B5,1F3B8,1F3A4] Música")
+        assert len(codes) == 3
+        assert "1F3B5" in codes
+
+
+# ── parse_actions_tag ─────────────────────────────────────────────────────────
+
+
+class TestParseActionsTag:
+    def test_basic_wave(self):
+        steps, remaining = parse_actions_tag("[actions:wave:800] Hola")
+        assert steps == [{"action": "wave", "duration_ms": 800}]
+        assert remaining == "Hola"
+
+    def test_multiple_steps(self):
+        steps, _ = parse_actions_tag("[actions:wave:800|nod:300|pause:200]")
+        assert len(steps) == 3
+        assert steps[0]["action"] == "wave"
+        assert steps[1]["action"] == "nod"
+        assert steps[2]["action"] == "pause"
+
+    def test_total_duration(self):
+        steps, _ = parse_actions_tag("[actions:wave:600|rotate_left:400]")
+        assert sum(s["duration_ms"] for s in steps) == 1000
+
+    def test_no_tag_returns_empty(self):
+        steps, remaining = parse_actions_tag("Sin tag")
+        assert steps == []
+        assert remaining == "Sin tag"
+
+    def test_empty_string(self):
+        steps, remaining = parse_actions_tag("")
+        assert steps == []
+        assert remaining == ""
+
+    def test_case_insensitive_tag(self):
+        steps, _ = parse_actions_tag("[ACTIONS:wave:500] texto")
+        assert len(steps) == 1
+        assert steps[0]["action"] == "wave"
+
+    def test_step_with_direction(self):
+        steps, _ = parse_actions_tag("[actions:rotate:left:500]")
+        assert steps[0]["action"] == "rotate"
+        assert steps[0]["direction"] == "left"
+        assert steps[0]["duration_ms"] == 500
 
 
 # ── build_move_sequence ───────────────────────────────────────────────────────

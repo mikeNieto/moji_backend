@@ -662,6 +662,128 @@ class TestProcessInteractionMedia:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SECCIÓN 4d — Emojis contextuales y acciones físicas
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestContextualEmojisAndActions:
+    """Tests para la extracción de [emojis:...] y [actions:...] del stream."""
+
+    async def _run(self, *chunks: str) -> MagicMock:
+        ws = make_mock_ws()
+        history_service = ConversationHistory()
+        with (
+            patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
+            patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
+            patch("ws_handlers.streaming._save_interaction_bg", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming._load_memories",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            await _process_interaction(
+                websocket=ws,
+                user_id="user_test",
+                request_id="req-ctx",
+                user_input="Test question",
+                input_type="text",
+                history_service=history_service,
+                session_id="sess-test",
+                agent=None,
+            )
+            await asyncio.sleep(0)
+        return ws
+
+    async def test_contextual_emojis_in_response_meta(self):
+        """[emojis:1F1EB-1F1F7,2708] → response_meta contiene esos códigos."""
+        ws = await self._run(
+            "[emotion:excited][emojis:1F1EB-1F1F7,2708] Francia tiene la Torre Eiffel."
+        )
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert "1F1EB-1F1F7" in meta["expression"]["emojis"]
+        assert "2708" in meta["expression"]["emojis"]
+
+    async def test_contextual_emojis_tag_not_in_text_chunks(self):
+        """[emojis:...] NO debe aparecer en los text_chunks enviados al cliente."""
+        ws = await self._run("[emotion:happy][emojis:1F600,1F525] Respuesta normal.")
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
+        assert "[emojis:" not in chunks_text
+        assert "Respuesta normal." in chunks_text
+
+    async def test_actions_in_response_meta(self):
+        """[actions:wave:800|nod:300] → response_meta.actions contiene la secuencia."""
+        ws = await self._run(
+            "[emotion:greeting][emojis:1F44B][actions:wave:800|nod:300] ¡Hola!"
+        )
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert len(meta["actions"]) == 1
+        seq = meta["actions"][0]
+        assert seq["step_count"] == 2
+        assert seq["total_duration_ms"] == 1100
+        assert seq["steps"][0]["action"] == "wave"
+        assert seq["steps"][1]["action"] == "nod"
+
+    async def test_actions_tag_not_in_text_chunks(self):
+        """[actions:...] NO debe aparecer en los text_chunks."""
+        ws = await self._run(
+            "[emotion:greeting][emojis:1F44B][actions:wave:800] ¡Hola!"
+        )
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
+        assert "[actions:" not in chunks_text
+        assert "¡Hola!" in chunks_text
+
+    async def test_no_contextual_emojis_falls_back_to_emotion(self):
+        """Sin [emojis:...] el response_meta usa los emojis de emoción."""
+        ws = await self._run("[emotion:happy] Respuesta sin emojis contextuales.")
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        # happy → ["1F600", "1F603", "1F604", "1F60A"]
+        assert "1F600" in meta["expression"]["emojis"]
+
+    async def test_no_actions_gives_empty_list(self):
+        """Sin [actions:...] response_meta.actions es lista vacía."""
+        ws = await self._run("[emotion:neutral] Sin acciones.")
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == []
+
+    async def test_emojis_and_actions_split_across_chunks(self):
+        """Tags de cabecera partidos en múltiples chunks → se extraen correctamente."""
+        ws = await self._run(
+            "[emotion:happy]",
+            "[emojis:1F1FA-1F1F8",
+            ",2708]",
+            "[actions:wave:500]",
+            " Texto final.",
+        )
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert "1F1FA-1F1F8" in meta["expression"]["emojis"]
+        assert len(meta["actions"]) == 1
+        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
+        assert "[emojis:" not in chunks_text
+        assert "[actions:" not in chunks_text
+        assert "Texto final." in chunks_text
+
+    async def test_emotion_combined_with_contextual_emojis(self):
+        """Los emojis finales son: contextuales + primeros 2 de emoción."""
+        ws = await self._run("[emotion:excited][emojis:2708,1F30D] ¡Vamos a volar!")
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        emojis = meta["expression"]["emojis"]
+        # Contextuales al inicio
+        assert emojis[0] == "2708"
+        assert emojis[1] == "1F30D"
+        # Seguidos de emojis de emoción (excited: 1F929, 1F389, ...)
+        assert "1F929" in emojis
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SECCIÓN 5 — ws_interact (flujo completo)
 # ═══════════════════════════════════════════════════════════════════════════════
 

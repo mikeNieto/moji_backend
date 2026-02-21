@@ -33,7 +33,8 @@ from starlette.websockets import WebSocketState
 from db import InteractionRow
 from repositories.memory import MemoryRepository
 from services.agent import create_agent, run_agent_stream
-from services.expression import emotion_to_emojis, parse_emotion_tag
+from services.expression import emotion_to_emojis, parse_emotion_tag, parse_emojis_tag
+from services.movement import build_move_sequence, parse_actions_tag
 from services.history import ConversationHistory
 from services.intent import classify_intent
 from ws_handlers.auth import authenticate_websocket
@@ -49,8 +50,9 @@ from ws_handlers.protocol import (
 
 logger = logging.getLogger(__name__)
 
-# Tamaño máximo del buffer de prefijo para detectar el emotion tag completo
-_MAX_EMOTION_BUFFER = 200
+# Tamaño máximo del buffer de cabecera para capturar todos los tags de control:
+# [emotion:TAG][emojis:CODE,...][actions:step|...][media_summary: ...]
+_MAX_HEADER_BUFFER = 500
 
 # Tamaño máximo del buffer para detectar el [media_summary: ...] tag
 _MAX_SUMMARY_BUFFER = 300
@@ -300,6 +302,12 @@ async def _process_interaction(
     emotion_tag = "neutral"
     emotion_sent = False
     prefix_buf = ""
+    contextual_emojis: list[
+        str
+    ] = []  # códigos OpenMoji del tema (sugeridos por el LLM)
+    response_actions: list[
+        dict
+    ] = []  # acciones físicas del robot (sugeridas por el LLM)
 
     # Estado del resumen de media:
     # Para interacciones de audio/imagen/video el LLM emite [media_summary: ...]
@@ -325,54 +333,95 @@ async def _process_interaction(
                 continue
 
             if not emotion_sent:
-                # FASE 1: acumular prefijo para detectar el emotion tag completo
+                # FASE 1: acumular la cabecera completa de tags de control.
+                # El LLM emite: [emotion:TAG][emojis:CODE,...][actions:step|...] texto
+                # En media: añade [media_summary: ...] antes del texto de respuesta.
                 prefix_buf += chunk
-                has_closing_bracket = "]" in prefix_buf
-                buffer_full = len(prefix_buf) >= _MAX_EMOTION_BUFFER
+                buffer_full = len(prefix_buf) >= _MAX_HEADER_BUFFER
 
-                if has_closing_bracket or buffer_full:
-                    # Parsear el emotion tag del buffer
-                    emotion_tag, remaining = parse_emotion_tag(prefix_buf)
+                # Esperar hasta tener al menos un ] en el buffer
+                if "]" not in prefix_buf and not buffer_full:
+                    continue
 
-                    # Enviar emotion ANTES del texto (§3.4 step 1)
-                    await _send_safe(
-                        websocket,
-                        make_emotion(
-                            request_id=request_id,
-                            emotion=emotion_tag,
-                            user_identified=user_id if user_id != "unknown" else None,
-                        ),
-                    )
-                    emotion_sent = True
+                # ── Parsear emotion tag ───────────────────────────────────────
+                emotion_tag, remaining = parse_emotion_tag(prefix_buf)
 
-                    if not summary_done:
-                        # FASE 2 (media): buscar [media_summary: ...] en el texto restante
-                        summary_buf = remaining
-                        s_close = "]" in summary_buf
-                        s_full = len(summary_buf) >= _MAX_SUMMARY_BUFFER
-                        if s_close or s_full:
-                            media_summary, after_summary = _parse_media_summary(
-                                summary_buf
-                            )
-                            summary_done = True
-                            if not media_summary:
-                                # LLM no emitió el tag → enviar el buffer como texto normal
-                                after_summary = summary_buf
-                            if after_summary:
-                                await _send_safe(
-                                    websocket,
-                                    make_text_chunk(request_id, after_summary),
-                                )
-                                full_response += after_summary
-                        # else: continuar acumulando en summary_buf en la siguiente fase
-                    else:
-                        # FASE 3 directa (texto): enviar el texto restante del prefijo
-                        if remaining:
+                # remaining vacío: puede haber más tags en el próximo chunk
+                if not remaining and not buffer_full:
+                    continue
+                # remaining empieza con [ pero sin ] todavía: tag incompleto
+                if (
+                    remaining.startswith("[")
+                    and "]" not in remaining
+                    and not buffer_full
+                ):
+                    continue
+
+                # ── Extraer [emojis:CODE,...] si está al inicio ───────────────
+                e_emojis, remaining = parse_emojis_tag(remaining)
+                if e_emojis:
+                    contextual_emojis = e_emojis
+
+                if not remaining and not buffer_full:
+                    continue
+                if (
+                    remaining.startswith("[")
+                    and "]" not in remaining
+                    and not buffer_full
+                ):
+                    continue
+
+                # ── Extraer [actions:step|...] si está al inicio ──────────────
+                e_actions, remaining = parse_actions_tag(remaining)
+                if e_actions:
+                    response_actions = e_actions
+
+                if not remaining and not buffer_full:
+                    continue
+                if (
+                    remaining.startswith("[")
+                    and "]" not in remaining
+                    and not buffer_full
+                ):
+                    continue
+
+                # ── Cabecera lista — enviar emotion (§3.4 step 1) ────────────
+                await _send_safe(
+                    websocket,
+                    make_emotion(
+                        request_id=request_id,
+                        emotion=emotion_tag,
+                        user_identified=user_id if user_id != "unknown" else None,
+                    ),
+                )
+                emotion_sent = True
+
+                if not summary_done:
+                    # FASE 2 (media): buscar [media_summary: ...] en el texto restante
+                    summary_buf = remaining
+                    s_close = "]" in summary_buf
+                    s_full = len(summary_buf) >= _MAX_SUMMARY_BUFFER
+                    if s_close or s_full:
+                        media_summary, after_summary = _parse_media_summary(summary_buf)
+                        summary_done = True
+                        if not media_summary:
+                            # LLM no emitió el tag → enviar el buffer como texto normal
+                            after_summary = summary_buf
+                        if after_summary:
                             await _send_safe(
                                 websocket,
-                                make_text_chunk(request_id, remaining),
+                                make_text_chunk(request_id, after_summary),
                             )
-                            full_response += remaining
+                            full_response += after_summary
+                    # else: continuar acumulando en summary_buf en la siguiente fase
+                else:
+                    # FASE 3 directa (texto): enviar el texto restante del prefijo
+                    if remaining:
+                        await _send_safe(
+                            websocket,
+                            make_text_chunk(request_id, remaining),
+                        )
+                        full_response += remaining
 
             elif not summary_done:
                 # FASE 2 continuada: acumular más chunks hasta completar [media_summary: ...]
@@ -448,7 +497,20 @@ async def _process_interaction(
         await _send_safe(websocket, make_capture_request(request_id, "video"))
 
     # 6. Construir y enviar response_meta
-    emojis = emotion_to_emojis(emotion_tag)
+    # Emojis: primero los contextuales del tema (sugeridos por el LLM),
+    # luego hasta 2 de emoción por defecto como respaldo visual.
+    emotion_emojis = emotion_to_emojis(emotion_tag)
+    emojis = (
+        (contextual_emojis + emotion_emojis[:2])
+        if contextual_emojis
+        else emotion_emojis
+    )
+    # Acciones: envolver los pasos en build_move_sequence si el LLM los sugirió
+    actions: list[dict] = []
+    if response_actions:
+        actions = [
+            build_move_sequence("Movimiento sugerido por Robi", response_actions)
+        ]
     processing_ms = int((time.monotonic() - start_time) * 1000)
 
     await _send_safe(
@@ -457,6 +519,7 @@ async def _process_interaction(
             request_id=request_id,
             response_text=full_response,
             emojis=emojis,
+            actions=actions,
         ),
     )
 

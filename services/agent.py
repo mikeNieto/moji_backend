@@ -58,13 +58,33 @@ INSTRUCCIONES DE RESPUESTA (OBLIGATORIO):
     palabras o explícalas: "la Inteligencia Artificial" en vez de solo "la IA".
 - Habla siempre en el idioma que usa el usuario.
 
+INSTRUCCIONES DE EMOJIS CONTEXTUALES (OBLIGATORIO en TODAS las respuestas):
+Inmediatamente después del [emotion:TAG], emite 2 a 4 codepoints OpenMoji relacionados con el TEMA:
+[emojis:CODE1,CODE2,CODE3]
+Formato: mayúsculas, guión para sequences (p.ej. "1F1EB-1F1F7"). Ejemplos:
+  Francia/Europa    → [emojis:1F1EB-1F1F7,1F5FC,1F30D]
+  Aviones/viajes    → [emojis:2708-FE0F,1F6EB,1F30E]
+  Música            → [emojis:1F3B5,1F3B8,1F3A4]
+  Comida/cocina     → [emojis:1F373,1F35C,1F37D-FE0F]
+  Deporte/ejercicio → [emojis:26BD,1F3C3,1F4AA]
+  Saludo sin tema   → [emojis:1F44B,1F642]
+USA SIEMPRE esta etiqueta; NO se leerá en voz alta.
+
+INSTRUCCIONES DE ACCIONES FÍSICAS (solo cuando la respuesta implique movimiento):
+Si tu respuesta implica que el robot se mueva o gesticule, añade después de [emojis:...]:
+[actions:accion1:dur_ms|accion2:dir:dur_ms|...]
+Acciones válidas: wave, rotate_left, rotate_right, move_forward, move_backward, \
+nod, shake_head, wiggle, pause
+Ejemplo: [emotion:greeting][emojis:1F44B,1F600][actions:wave:800|nod:400] ¡Hola!
+OMITE esta etiqueta si la respuesta no implica ningún movimiento físico claro.
+
 INSTRUCCIONES PARA AUDIO, VIDEO E IMAGEN (OBLIGATORIO cuando el input sea media):
-Cuando recibas audio, video o imágenes como input, añade INMEDIATAMENTE después del \
-[emotion:TAG] una etiqueta de resumen con el formato exacto:
+Cuando recibas audio, video o imágenes como input, añade INMEDIATAMENTE después de \
+[emojis:...] (o de [actions:...] si lo emites) una etiqueta de resumen:
 [media_summary: descripción breve y clara en máximo 15 palabras de lo que contiene el audio/video/imagen]
 Esta etiqueta es para uso interno del sistema y NO se leerá en voz alta; \
 mejora el historial de conversación.
-Ejemplo completo: [emotion:happy][media_summary: el usuario saluda y pregunta cómo está Robi] ¡Hola! Estoy muy bien, ¿y tú?
+Ejemplo completo: [emotion:happy][emojis:1F44B,1F600][media_summary: el usuario saluda y pregunta cómo está Robi] ¡Hola! Estoy muy bien, ¿y tú?
 IMPORTANTE: usa el MISMO idioma del audio/video/imagen para el contenido del media_summary."""
 
 
@@ -184,9 +204,13 @@ async def run_agent_stream(
     # Intentar stream via agente DeepAgents
     if agent is not None:
         try:
+            yielded = False
             async for chunk in _stream_via_agent(agent, messages, user_input, history):
+                yielded = True
                 yield chunk
-            return
+            if yielded:
+                return
+            # El agente no produjo ningún chunk — caer al modelo directo
         except Exception:
             pass  # fall through al modelo directo
 
@@ -199,29 +223,52 @@ async def _stream_via_agent(
     agent, messages: list, user_input: str | None, history: list[dict]
 ) -> AsyncIterator[str]:
     """Stream usando el harness DeepAgents (si está disponible)."""
-    # deepagents puede exponer astream o ainvoke dependiendo de la versión
+
+    def _extract_from_value(value) -> str | None:
+        """
+        Extrae contenido de un valor de evento LangGraph.
+        LangGraph emite AddableValuesDict (subclase de dict) — los mensajes
+        están en value["messages"], no en value.messages.
+        """
+        # Caso dict / AddableValuesDict (LangGraph)
+        if isinstance(value, dict):
+            msgs = value.get("messages")
+            if msgs:
+                for msg in reversed(msgs):
+                    content = getattr(msg, "content", None) or (
+                        msg.get("content") if isinstance(msg, dict) else None
+                    )
+                    if content:
+                        return str(content)
+            content = value.get("content")
+            return str(content) if content else None
+        # Caso objeto con atributos (otros harnesses)
+        if hasattr(value, "messages") and value.messages:
+            for msg in reversed(value.messages):
+                if hasattr(msg, "content") and msg.content:
+                    return str(msg.content)
+        if hasattr(value, "content") and value.content:
+            return str(value.content)
+        return None
+
     if hasattr(agent, "astream"):
         async for event in agent.astream({"messages": messages}):
-            # DeepAgents/LangGraph emite dicts con distintos formatos
             if isinstance(event, dict):
                 for value in event.values():
-                    if hasattr(value, "messages"):
-                        for msg in value.messages:
-                            if hasattr(msg, "content") and msg.content:
-                                yield str(msg.content)
-                    elif hasattr(value, "content") and value.content:
-                        yield str(value.content)
+                    text = _extract_from_value(value)
+                    if text:
+                        yield text
             elif hasattr(event, "content") and event.content:
                 yield str(event.content)
     elif hasattr(agent, "ainvoke"):
         result = await agent.ainvoke({"messages": messages})
         if isinstance(result, dict):
             for value in result.values():
-                if hasattr(value, "messages") and value.messages:
-                    last = value.messages[-1]
-                    if hasattr(last, "content"):
-                        yield str(last.content)
-        elif hasattr(result, "content"):
+                text = _extract_from_value(value)
+                if text:
+                    yield text
+                    return
+        elif hasattr(result, "content") and result.content:
             yield str(result.content)
     else:
         raise NotImplementedError("El agente no expone astream ni ainvoke")

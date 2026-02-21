@@ -43,3 +43,50 @@ def build_move_sequence(description: str, steps: list[dict]) -> dict:
         "total_duration_ms": total_duration_ms,
         "step_count": len(steps),
     }
+
+
+# ── parse_actions_tag ─────────────────────────────────────────────────────────
+
+import re as _re  # noqa: E402
+
+_ACTIONS_TAG_RE = _re.compile(r"^\[actions:([^\]]+)\]\s*", _re.IGNORECASE)
+
+
+def parse_actions_tag(text: str) -> tuple[list[dict], str]:
+    """
+    Extrae [actions:step1|step2|...] del inicio del texto.
+
+    Formatos de step (separados por |):
+      accion:dur_ms              → {"action": "wave",   "duration_ms": 800}
+      accion:direccion:dur_ms    → {"action": "rotate", "direction": "left", "duration_ms": 500}
+
+    Acciones válidas: wave, rotate_left, rotate_right, move_forward, move_backward,
+                      nod, shake_head, wiggle, pause
+
+    Devuelve (lista_de_steps, texto_restante).
+    Si no hay tag al inicio, devuelve ([], text sin modificar).
+
+    Ejemplos:
+        parse_actions_tag("[actions:wave:800|nod:300] Hola")
+        # → ([{action:wave,dur:800},{action:nod,dur:300}], "Hola")
+
+        parse_actions_tag("Sin tag")  # → ([], "Sin tag")
+    """
+    m = _ACTIONS_TAG_RE.match(text)
+    if not m:
+        return [], text
+    steps: list[dict] = []
+    for part in m.group(1).split("|"):
+        parts = [p.strip() for p in part.split(":") if p.strip()]
+        if not parts:
+            continue
+        action = parts[0]
+        if len(parts) == 2 and parts[1].isdigit():
+            steps.append({"action": action, "duration_ms": int(parts[1])})
+        elif len(parts) == 3 and parts[2].isdigit():
+            steps.append(
+                {"action": action, "direction": parts[1], "duration_ms": int(parts[2])}
+            )
+        else:
+            steps.append({"action": action, "duration_ms": 500})
+    return steps, text[m.end() :]
