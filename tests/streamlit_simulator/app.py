@@ -159,6 +159,7 @@ def ws_send_and_receive(
     emotion_latency_ms = None
     first_chunk_latency_ms = None
     error = None
+    chunks: list[dict] = []
 
     status_ph = st.empty()
     text_ph = st.empty()
@@ -173,16 +174,19 @@ def ws_send_and_receive(
         msg = json.loads(raw)
         mtype = msg.get("type", "")
 
+        chunk_ts = int((time.monotonic() - start_ts) * 1000)
+        chunks.append({"ts_ms": chunk_ts, **msg})
+
         if mtype == "emotion":
             emotion = msg.get("emotion", "neutral")
-            emotion_latency_ms = int((time.monotonic() - start_ts) * 1000)
+            emotion_latency_ms = chunk_ts
             status_ph.markdown(
                 f"{emotion_img_html(emotion, 48)} **{emotion}** · ⏱️ {emotion_latency_ms} ms",
                 unsafe_allow_html=True,
             )
         elif mtype == "text_chunk":
             if first_chunk_latency_ms is None:
-                first_chunk_latency_ms = int((time.monotonic() - start_ts) * 1000)
+                first_chunk_latency_ms = chunk_ts
             full_text += msg.get("text", "")
             text_ph.markdown(full_text)
         elif mtype == "response_meta":
@@ -202,6 +206,7 @@ def ws_send_and_receive(
         "emotion_latency_ms": emotion_latency_ms,
         "first_chunk_latency_ms": first_chunk_latency_ms,
         "error": error,
+        "chunks": chunks,
     }
 
 
@@ -434,6 +439,7 @@ with main_col:
                         "latency_ms": None,
                         "emotion_latency_ms": None,
                         "first_chunk_latency_ms": None,
+                        "chunks": [],
                     }
 
             # Guardar resultado en session_state (persiste tras rerun)
@@ -493,6 +499,14 @@ with main_col:
                     )
                 with st.expander("📦 response_meta"):
                     st.json(meta)
+
+            chunks = result.get("chunks") or []
+            with st.expander(f"🐛 Debug — chunks WS ({len(chunks)})"):
+                for i, chunk in enumerate(chunks):
+                    st.markdown(
+                        f"**#{i + 1}** `{chunk.get('type', '?')}` · `{chunk.get('ts_ms', '?')} ms`"
+                    )
+                    st.json(chunk)
 
             if result.get("latency_ms") is not None:
                 st.caption(f"⏱️ Latencia total: {result['latency_ms']} ms")
