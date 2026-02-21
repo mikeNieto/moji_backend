@@ -19,6 +19,7 @@ Uso:
         print(chunk, end="", flush=True)
 """
 
+import base64
 from collections.abc import AsyncIterator
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -88,22 +89,35 @@ def create_agent():
 
 
 async def run_agent_stream(
-    user_input: str,
+    user_input: str | None,
     history: list[dict],
     session_id: str = "",
     user_id: str = "unknown",
     agent=None,
+    audio_data: bytes | None = None,
+    audio_mime_type: str = "audio/aac",
+    image_data: bytes | None = None,
+    image_mime_type: str = "image/jpeg",
+    video_data: bytes | None = None,
+    video_mime_type: str = "video/mp4",
+    memory_context: str = "",
 ) -> AsyncIterator[str]:
     """
     Ejecuta el agente y hace streaming de los tokens de texto generados.
 
     Parámetros:
-        user_input: El texto del usuario (transcripción de voz o texto directo).
-        history:    Historial de la sesión como lista de {role, content}.
-        session_id: Identificador de sesión (para logging).
-        user_id:    Identificador del usuario (puede incluirse en el contexto).
-        agent:      Agente DeepAgents creado por create_agent(). Si es None,
-                    se usa el modelo Gemini directamente (sin harness de agente).
+        user_input:     Texto del usuario. None cuando el input es media (audio/imagen/video).
+        history:        Historial de la sesión como lista de {role, content}.
+        session_id:     Identificador de sesión (para logging).
+        user_id:        Identificador del usuario.
+        agent:          Agente DeepAgents. Si es None usa el modelo directamente.
+        audio_data:     Bytes del audio en crudo (AAC/Opus). Gemini actúa como STT+LLM.
+        audio_mime_type: MIME del audio (default: audio/aac).
+        image_data:     Bytes de imagen JPEG en crudo.
+        image_mime_type: MIME de la imagen (default: image/jpeg).
+        video_data:     Bytes del video MP4 en crudo.
+        video_mime_type: MIME del video (default: video/mp4).
+        memory_context: Contexto de memoria del usuario, añadido como texto junto al media.
 
     Yields:
         Fragmentos de texto (str) a medida que el LLM los genera.
@@ -120,7 +134,43 @@ async def run_agent_stream(
         else:
             messages.append(AIMessage(content=content))
 
-    messages.append(HumanMessage(content=user_input))
+    # Construir el mensaje del usuario actual (texto o multimodal)
+    has_media = (
+        audio_data is not None or image_data is not None or video_data is not None
+    )
+    if has_media:
+        # Gemini recibe el media directamente — actúa como STT+LLM sin pipeline intermedio
+        content_parts: list[str | dict] = []
+        if memory_context:
+            content_parts.append({"type": "text", "text": memory_context})
+        if audio_data is not None:
+            content_parts.append(
+                {
+                    "type": "media",
+                    "mime_type": audio_mime_type,
+                    "data": base64.b64encode(audio_data).decode(),
+                }
+            )
+        if image_data is not None:
+            content_parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image_mime_type};base64,{base64.b64encode(image_data).decode()}"
+                    },
+                }
+            )
+        if video_data is not None:
+            content_parts.append(
+                {
+                    "type": "media",
+                    "mime_type": video_mime_type,
+                    "data": base64.b64encode(video_data).decode(),
+                }
+            )
+        messages.append(HumanMessage(content=content_parts))
+    else:
+        messages.append(HumanMessage(content=user_input or ""))
 
     # Intentar stream via agente DeepAgents
     if agent is not None:
@@ -137,7 +187,7 @@ async def run_agent_stream(
 
 
 async def _stream_via_agent(
-    agent, messages: list, user_input: str, history: list[dict]
+    agent, messages: list, user_input: str | None, history: list[dict]
 ) -> AsyncIterator[str]:
     """Stream usando el harness DeepAgents (si está disponible)."""
     # deepagents puede exponer astream o ainvoke dependiendo de la versión

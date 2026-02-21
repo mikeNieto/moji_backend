@@ -20,6 +20,7 @@ Uso (registrado en main.py):
 """
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -177,18 +178,26 @@ async def ws_interact(websocket: WebSocket) -> None:
                     )
 
             elif client_type == "image":
-                # Multimodal: imagen de contexto o registro
+                # Multimodal: imagen de contexto o registro — se envía directo a Gemini
                 if not request_id:
                     request_id = msg.get("request_id") or new_session_id()
                 else:
                     request_id = msg.get("request_id") or request_id
-                purpose = msg.get("purpose", "context")
+                # Decodificar los bytes de imagen del campo base64
+                raw_b64 = msg.get("data", "")
+                image_bytes: bytes | None = None
+                if raw_b64:
+                    try:
+                        image_bytes = base64.b64decode(raw_b64)
+                    except Exception:
+                        image_bytes = None
                 await _process_interaction(
                     websocket=websocket,
                     user_id=user_id,
                     request_id=request_id,
-                    user_input=f"(imagen de {purpose} recibida)",
+                    user_input=None,
                     input_type="vision",
+                    image_data=image_bytes,
                     history_service=history_service,
                     session_id=session_id,
                     agent=agent,
@@ -199,13 +208,21 @@ async def ws_interact(websocket: WebSocket) -> None:
                     request_id = msg.get("request_id") or new_session_id()
                 else:
                     request_id = msg.get("request_id") or request_id
-                duration_ms = msg.get("duration_ms", 0)
+                # Decodificar los bytes de video del campo base64
+                raw_b64 = msg.get("data", "")
+                video_bytes: bytes | None = None
+                if raw_b64:
+                    try:
+                        video_bytes = base64.b64decode(raw_b64)
+                    except Exception:
+                        video_bytes = None
                 await _process_interaction(
                     websocket=websocket,
                     user_id=user_id,
                     request_id=request_id,
-                    user_input=f"(video de {duration_ms}ms recibido)",
+                    user_input=None,
                     input_type="vision",
+                    video_data=video_bytes,
                     history_service=history_service,
                     session_id=session_id,
                     agent=agent,
@@ -242,16 +259,17 @@ async def _process_interaction(
     session_id: str,
     agent,
     audio_data: bytes | None = None,
+    image_data: bytes | None = None,
+    video_data: bytes | None = None,
 ) -> None:
     """
     Procesa una interacción completa:
       load memory → run agent stream → emit emotion + text_chunks → emit meta
+
+    Para interacciones de audio/imagen/video el contenido media se envía directamente
+    a Gemini que actúa como STT+LLM sin pipeline STT intermedio (§3.4, §1.3).
     """
     start_time = time.monotonic()
-
-    if user_input is None:
-        # audio sin transcripción — placeholder
-        user_input = "(audio recibido)"
 
     # 1. Cargar memoria del usuario
     memories = await _load_memories(user_id)
@@ -259,8 +277,20 @@ async def _process_interaction(
     # 2. Obtener historial de la sesión
     history = history_service.get_history(session_id)
 
-    # 3. Enriquecer el input con el contexto de memoria
-    enriched_input = _build_context_input(user_input, memories)
+    # 3. Preparar el input para el agente
+    #    • Para texto: enriquecer con contexto de memoria en el mismo string.
+    #    • Para media (audio/imagen/video): pasar el contexto de memoria separado
+    #      como texto y el media como bytes — Gemini lo recibe todo junto.
+    has_media = (
+        audio_data is not None or image_data is not None or video_data is not None
+    )
+
+    if has_media:
+        enriched_input: str | None = None
+        memory_context = _build_memory_context(memories)
+    else:
+        enriched_input = _build_context_input(user_input or "", memories)
+        memory_context = ""
 
     # 4. Streaming del agente
     full_response = ""
@@ -275,6 +305,10 @@ async def _process_interaction(
             session_id=session_id,
             user_id=user_id,
             agent=agent,
+            audio_data=audio_data,
+            image_data=image_data,
+            video_data=video_data,
+            memory_context=memory_context,
         ):
             if not chunk:
                 continue
@@ -374,11 +408,17 @@ async def _process_interaction(
     )
 
     # 8. Background: guardar mensajes en historial + compactar
+    #    Para media: guardamos una etiqueta descriptiva como turno del usuario.
+    history_user_msg = (
+        (user_input or "")
+        if not has_media
+        else ("[audio]" if audio_data is not None else "[imagen/video]")
+    )
     asyncio.create_task(
         _save_history_bg(
             history_service=history_service,
             session_id=session_id,
-            user_message=user_input,
+            user_message=history_user_msg,
             assistant_message=full_response,
         )
     )
@@ -462,6 +502,20 @@ def _build_context_input(user_input: str, memories: list) -> str:
     memory_lines = [f"- {m.content}" for m in memories]
     memory_block = "\n".join(memory_lines)
     return f"[Contexto del usuario:\n{memory_block}\n]\n\n{user_input}"
+
+
+def _build_memory_context(memories: list) -> str:
+    """
+    Devuelve solo el bloque de contexto de memoria como string.
+    Se usa en interacciones multimodal (audio/imagen/video) donde el input
+    del usuario son bytes y el contexto se pasa como texto separado.
+    Si no hay memorias, devuelve cadena vacía.
+    """
+    if not memories:
+        return ""
+    memory_lines = [f"- {m.content}" for m in memories]
+    memory_block = "\n".join(memory_lines)
+    return f"[Contexto del usuario:\n{memory_block}\n]"
 
 
 async def _send_safe(websocket: WebSocket, text: str) -> None:
