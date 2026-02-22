@@ -1,14 +1,22 @@
 """
 MemoryRepository — CRUD asíncrono sobre la tabla `memories`.
 
-Incluye un filtro de privacidad basado en palabras clave (versión sin Gemini).
-La versión con clasificación Gemini se añadirá en la iteración 5.
+v2.0 — Robi Amigo Familiar
+  - `user_id` reemplazado por `person_id` nullable (hay memorias generales)
+  - `memory_type` expandido: experience | zone_info | person_fact | general
+  - Nuevo campo `zone_id` nullable para memorias contextualizadas en lugar
+  - Nuevo método `get_robi_context()` para construir el prompt del agente
 
 Uso:
     async with AsyncSessionLocal() as session:
         repo = MemoryRepository(session)
-        mem = await repo.save(user_id="user_juan", memory_type="fact",
-                              content="Le gusta el café", importance=7)
+        mem = await repo.save(
+            memory_type="person_fact",
+            content="A Juan le gusta el café",
+            person_id="persona_juan_01",
+            importance=7,
+        )
+        ctx = await repo.get_robi_context()
 """
 
 from datetime import datetime, timezone
@@ -60,8 +68,7 @@ _PRIVACY_KEYWORDS: frozenset[str] = frozenset(
 def is_private(content: str) -> bool:
     """
     Devuelve True si el contenido contiene alguna palabra clave sensible.
-    Comparación case-insensitive. En la iteración 5 esto se reemplaza por
-    clasificación con Gemini Flash Lite.
+    Comparación case-insensitive.
     """
     lower = content.lower()
     return any(kw in lower for kw in _PRIVACY_KEYWORDS)
@@ -73,7 +80,8 @@ def is_private(content: str) -> bool:
 def _row_to_entity(row: MemoryRow) -> Memory:
     return Memory(
         id=row.id,
-        user_id=row.user_id,
+        person_id=row.person_id,
+        zone_id=row.zone_id,
         memory_type=row.memory_type,
         content=row.content,
         importance=row.importance,
@@ -91,23 +99,28 @@ class MemoryRepository:
 
     async def save(
         self,
-        user_id: str,
         memory_type: str,
         content: str,
+        *,
+        person_id: str | None = None,
+        zone_id: int | None = None,
         importance: int = 5,
         expires_at: datetime | None = None,
     ) -> Memory | None:
         """
         Persiste una nueva memoria.
 
-        Devuelve None si el contenido es detectado como privado por el
-        filtro de palabras clave (no se guarda).
+        - `person_id` nullable: None para memorias generales de Robi.
+        - `zone_id` nullable: contexto espacial opcional.
+        - `memory_type` debe ser uno de: experience | zone_info | person_fact | general.
+        - Devuelve None si el contenido es detectado como privado.
         """
         if is_private(content):
             return None
 
         row = MemoryRow(
-            user_id=user_id,
+            person_id=person_id,
+            zone_id=zone_id,
             memory_type=memory_type,
             content=content,
             importance=importance,
@@ -118,17 +131,22 @@ class MemoryRepository:
         await self._session.refresh(row)
         return _row_to_entity(row)
 
-    async def get_for_user(
+    async def get_for_person(
         self,
-        user_id: str,
+        person_id: str,
         *,
+        memory_type: str | None = None,
         include_expired: bool = False,
+        limit: int | None = None,
     ) -> list[Memory]:
         """
-        Devuelve todas las memorias del usuario, ordenadas por importancia desc
-        y timestamp desc. Por defecto excluye las expiradas.
+        Devuelve memorias ligadas a una persona, ordenadas por importancia desc
+        y timestamp desc. Filtro opcional por tipo.
         """
-        stmt = select(MemoryRow).where(MemoryRow.user_id == user_id)
+        stmt = select(MemoryRow).where(MemoryRow.person_id == person_id)
+
+        if memory_type is not None:
+            stmt = stmt.where(MemoryRow.memory_type == memory_type)
 
         if not include_expired:
             now = datetime.now(timezone.utc)
@@ -137,25 +155,61 @@ class MemoryRepository:
             )
 
         stmt = stmt.order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
+        result = await self._session.execute(stmt)
+        return [_row_to_entity(r) for r in result.scalars().all()]
+
+    async def get_general(
+        self,
+        *,
+        memory_type: str | None = None,
+        include_expired: bool = False,
+        limit: int | None = None,
+    ) -> list[Memory]:
+        """
+        Devuelve memorias generales de Robi (person_id IS NULL).
+        Filtro opcional por tipo.
+        """
+        stmt = select(MemoryRow).where(MemoryRow.person_id.is_(None))
+
+        if memory_type is not None:
+            stmt = stmt.where(MemoryRow.memory_type == memory_type)
+
+        if not include_expired:
+            now = datetime.now(timezone.utc)
+            stmt = stmt.where(
+                (MemoryRow.expires_at.is_(None)) | (MemoryRow.expires_at > now)
+            )
+
+        stmt = stmt.order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
         result = await self._session.execute(stmt)
         return [_row_to_entity(r) for r in result.scalars().all()]
 
     async def get_recent_important(
         self,
-        user_id: str,
+        person_id: str | None = None,
         *,
         min_importance: int = 5,
         limit: int = 5,
     ) -> list[Memory]:
         """
-        Devuelve las memorias más importantes del usuario (§3.6).
-        Filtra por importancia >= min_importance, ordena por timestamp DESC,
-        devuelve hasta `limit` resultados. Excluye memorias expiradas.
+        Devuelve las memorias más importantes, opcionalmente de una persona concreta.
+        Si `person_id` es None devuelve las memorias generales más importantes.
         """
         now = datetime.now(timezone.utc)
+        if person_id is not None:
+            person_filter = MemoryRow.person_id == person_id
+        else:
+            person_filter = MemoryRow.person_id.is_(None)
+
         stmt = (
             select(MemoryRow)
-            .where(MemoryRow.user_id == user_id)
+            .where(person_filter)
             .where(MemoryRow.importance >= min_importance)
             .where((MemoryRow.expires_at.is_(None)) | (MemoryRow.expires_at > now))
             .order_by(MemoryRow.timestamp.desc())
@@ -163,6 +217,69 @@ class MemoryRepository:
         )
         result = await self._session.execute(stmt)
         return [_row_to_entity(r) for r in result.scalars().all()]
+
+    async def get_robi_context(
+        self,
+        *,
+        person_id: str | None = None,
+        max_general: int = 10,
+        max_person: int = 8,
+        max_zone_info: int = 5,
+    ) -> dict[str, list[Memory]]:
+        """
+        Recupera el contexto completo que se inyecta en el prompt del agente:
+
+        Claves del dict devuelto:
+          "general"      — memorias generales de Robi (experience + general)
+          "person"       — memorias ligadas a `person_id` (si se provee)
+          "zone_info"    — memorias de tipo zone_info (mapa mental resumido)
+
+        Ordena por importancia desc dentro de cada grupo.
+        """
+        now = datetime.now(timezone.utc)
+        active_filter = (MemoryRow.expires_at.is_(None)) | (MemoryRow.expires_at > now)
+
+        # Memorias generales (experience + general, sin persona)
+        general_stmt = (
+            select(MemoryRow)
+            .where(MemoryRow.person_id.is_(None))
+            .where(MemoryRow.memory_type.in_(["experience", "general"]))
+            .where(active_filter)
+            .order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
+            .limit(max_general)
+        )
+        general_result = await self._session.execute(general_stmt)
+        general_memories = [_row_to_entity(r) for r in general_result.scalars().all()]
+
+        # Memorias de zona (mapa mental)
+        zone_stmt = (
+            select(MemoryRow)
+            .where(MemoryRow.memory_type == "zone_info")
+            .where(active_filter)
+            .order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
+            .limit(max_zone_info)
+        )
+        zone_result = await self._session.execute(zone_stmt)
+        zone_memories = [_row_to_entity(r) for r in zone_result.scalars().all()]
+
+        # Memorias de la persona actual
+        person_memories: list[Memory] = []
+        if person_id is not None:
+            person_stmt = (
+                select(MemoryRow)
+                .where(MemoryRow.person_id == person_id)
+                .where(active_filter)
+                .order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
+                .limit(max_person)
+            )
+            person_result = await self._session.execute(person_stmt)
+            person_memories = [_row_to_entity(r) for r in person_result.scalars().all()]
+
+        return {
+            "general": general_memories,
+            "person": person_memories,
+            "zone_info": zone_memories,
+        }
 
     async def delete(self, memory_id: int) -> bool:
         """Elimina una memoria por su PK. Devuelve True si existía."""
@@ -176,11 +293,39 @@ class MemoryRepository:
         await self._session.flush()
         return True
 
-    async def delete_for_user(self, user_id: str) -> int:
-        """Elimina todas las memorias del usuario. Devuelve el número de filas borradas."""
+    async def delete_for_person(self, person_id: str) -> int:
+        """Elimina todas las memorias de una persona. Devuelve el número de filas borradas."""
         result = await self._session.execute(
             delete(MemoryRow)
-            .where(MemoryRow.user_id == user_id)
+            .where(MemoryRow.person_id == person_id)
             .returning(MemoryRow.id)
         )
         return len(result.fetchall())
+
+    async def replace_with_compacted(
+        self,
+        old_ids: list[int],
+        memory_type: str,
+        content: str,
+        person_id: str | None = None,
+        zone_id: int | None = None,
+        importance: int = 7,
+    ) -> Memory | None:
+        """
+        Sustituye un conjunto de memorias antiguas por una sola memoria compactada.
+        Usado por services/memory_compaction.py.
+        Devuelve la nueva memoria, o None si el contenido es privado.
+        """
+        # Borrar las antiguas
+        if old_ids:
+            await self._session.execute(
+                delete(MemoryRow).where(MemoryRow.id.in_(old_ids))
+            )
+
+        return await self.save(
+            memory_type=memory_type,
+            content=content,
+            person_id=person_id,
+            zone_id=zone_id,
+            importance=importance,
+        )
