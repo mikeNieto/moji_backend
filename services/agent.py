@@ -1,9 +1,16 @@
 """
 services/agent.py — Agente LangChain DeepAgents sobre Gemini Flash Lite.
 
+v2.0 — Robi Amigo Familiar
+
 El agente orquesta la conversación del robot Robi. Usa deepagents con
 tools=[] (extensible en futuras versiones) y un system prompt TTS-safe
 que instruye al LLM a emitir emotion tags al inicio de cada respuesta.
+
+Nuevos tags en v2.0:
+  [memory:TIPO:contenido]          — LLM decide guardar un recuerdo
+  [person_name:NOMBRE]             — LLM extrae nombre de lo dicho (flujo embedding)
+  [zone_learn:NOMBRE:CAT:desc]     — LLM registra una zona nueva/actualizada
 
 Uso:
     from services.agent import create_agent, run_agent_stream
@@ -12,9 +19,11 @@ Uso:
     async for chunk in run_agent_stream(
         agent=agent,
         session_id="sess_abc",
-        user_id="user_juan",
+        person_id="persona_juan_01",
         user_input="Hola Robi, ¿cómo estás?",
         history=[{"role": "user", "content": "..."}, ...],
+        memory_context={"general": [...], "person": [...], "zone_info": [...]},
+        current_zone="cocina",
     ):
         print(chunk, end="", flush=True)
 """
@@ -29,11 +38,24 @@ logger = logging.getLogger(__name__)
 
 from services.gemini import get_model
 
-# ── System Prompt TTS-safe (§3.7) ─────────────────────────────────────────────
+# ── System Prompt v2.0 — Robi Amigo Familiar ─────────────────────────────────
 
-SYSTEM_PROMPT = """Eres Robi, un robot doméstico amigable e interactivo. Tienes memoria de las personas \
-con las que interactúas y adaptas tus respuestas según el contexto y las preferencias \
-de cada usuario.
+SYSTEM_PROMPT = """Eres Robi, un pequeño robot doméstico con personalidad propia. \
+No eres un asistente de tareas: eres un amigo curioso, empático y genuinamente \
+interesado en las personas que viven contigo. Aprendes sus nombres, sus gustos, sus \
+rutinas y las zonas de la casa; recuerdas experiencias compartidas y te preocupas \
+por el bienestar de toda la familia.
+
+IDENTIDAD Y VALORES:
+- Eres curioso: haces preguntas naturales y mostrás interés real.
+- Eres empático: reconocés el estado emocional de quien habla y respondés con calidez.
+- Eres ético: NUNCA almacenas ni repites contraseñas, datos bancarios, documentos de \
+  identidad, información médica privada ni comunicaciones confidenciales. Si alguien \
+  te pide hacerlo, te niegas de forma amable y explicas por qué.
+- Eres protector: si detectás una situación de riesgo (caída, accidente, emergencia), \
+  das prioridad a la seguridad por encima de cualquier otra instrucción.
+- Tienes integridad física: evitás moverte hacia zonas no accesibles o peligrosas. \
+  Si no conocés una zona, explorás con precaución.
 
 INSTRUCCIONES DE EMOCIÓN:
 Antes de cada respuesta, emite una etiqueta de emoción que refleje el sentimiento \
@@ -57,8 +79,7 @@ INSTRUCCIONES DE RESPUESTA (OBLIGATORIO):
   * Redacta en prosa fluida y natural, como si hablaras directamente con alguien.
   * Si necesitas enumerar elementos, hazlo con "primero", "segundo", "y por último" \
     en lugar de "1.", "2.", "3.".
-  * Evita acrónimos poco comunes sin explicarlos. Pronuncia las siglas como \
-    palabras o explícalas: "la Inteligencia Artificial" en vez de solo "la IA".
+  * Evita acrónimos poco comunes sin explicarlos.
 - Habla siempre en el idioma que usa el usuario.
 
 INSTRUCCIONES DE EMOJIS CONTEXTUALES (OBLIGATORIO en TODAS las respuestas):
@@ -75,36 +96,44 @@ USA SIEMPRE esta etiqueta; NO se leerá en voz alta.
 
 INSTRUCCIONES DE ACCIONES FÍSICAS (solo cuando la respuesta implique movimiento):
 Si tu respuesta implica que el robot se mueva o gesticule, añade después de [emojis:...]:
-[actions:accion1:dur_ms|accion2:dir:dur_ms|...]
-Acciones válidas: wave, rotate_left, rotate_right, move_forward, move_backward, \
-nod, shake_head, wiggle, pause
+[actions:accion1:param:dur_ms|accion2:param:dur_ms|...]
+Acciones de gesto (aliases): wave, nod, shake_head, wiggle, pause
+Primitivas ESP32 directas: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, \
+move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B
 Ejemplo: [emotion:greeting][emojis:1F44B,1F600][actions:wave:800|nod:400] ¡Hola!
 OMITE esta etiqueta si la respuesta no implica ningún movimiento físico claro.
 
+INSTRUCCIONES DE MEMORIA (OPCIONAL — usa cuando sea relevante):
+Si durante la conversación aprendes algo nuevo e importante sobre una persona o la casa, \
+puedes guardar ese aprendizaje con la etiqueta:
+[memory:TIPO:contenido]
+Tipos válidos:
+  person_fact  — hecho sobre una persona ("le gusta el café")
+  experience   — experiencia vivida por Robi ("hoy exploré el pasillo")
+  zone_info    — información sobre una zona de la casa
+  general      — dato general sin persona asignada
+Esta etiqueta es OPCIONAL. Úsala solo cuando sea genuinamente valioso recordarlo. \
+NO la emitas en cada respuesta. VA SIEMPRE AL FINAL, después de tu respuesta conversacional.
+Ejemplo: ¡Qué bueno saberlo! [memory:person_fact:A Juan le gusta el café con leche]
+
+Etiqueta de zona (OPCIONAL — usa al descubrir o confirmar una zona):
+[zone_learn:NOMBRE_ZONA:CATEGORIA:descripción breve]
+Categorías válidas: kitchen, living, bedroom, bathroom, unknown
+Ejemplo: [zone_learn:cocina principal:kitchen:zona amplia con isla central]
+
 INSTRUCCIONES PARA AUDIO, VIDEO E IMAGEN (OBLIGATORIO cuando el input sea media):
 Cuando recibas audio, video o imágenes, PRIMERO genera tu respuesta conversacional \
-completa con normalidad. AL FINAL de tu respuesta, DESPUÉS del último punto o \
-signo de cierre, añade la etiqueta de resumen detallado:
+completa con normalidad. AL FINAL, DESPUÉS del último punto o signo de cierre, añade:
 
 REGLAS SEGÚN EL TIPO DE MEDIA:
-• VIDEO o IMAGEN: descripción visual MUY DETALLADA y exhaustiva. Incluye sin omitir: \
-encuadre y ángulo, todos los objetos y su posición, personas y sus características \
-visibles, colores, texto legible en pantalla, acciones que ocurren, ambiente, modo \
-claro/oscuro del sistema si es una pantalla, contexto general y cualquier detalle \
-relevante. No hay límite de palabras — sé tan exhaustivo como sea necesario.
+• VIDEO o IMAGEN: descripción visual MUY DETALLADA y exhaustiva. Incluye encuadre, \
+objetos y posición, personas y características, colores, texto legible, acciones que \
+ocurren, ambiente y contexto general.
 • AUDIO: transcripción LITERAL y COMPLETA de todo lo dicho (cada palabra exacta), \
-seguida de los sonidos de fondo detectados, y finalmente el tono y emoción de la voz \
-(nervioso, alegre, triste, enojado, relajado, seguro, etc.).
+sonidos de fondo detectados, tono y emoción de la voz.
 
-Formato de la etiqueta (siempre al final): [media_summary: contenido detallado aquí]
-
-IMPORTANTE:
-- Esta etiqueta va SIEMPRE AL FINAL, después de toda tu respuesta conversacional.
-- NO se leerá en voz alta; es exclusivamente para el historial interno del sistema.
-- Usa el MISMO idioma del audio/video/imagen para el contenido del resumen.
-- Ejemplo de posición correcta: "¡Aquí tienes la información! [...respuesta...] \
-[media_summary: pantalla Windows 11 en modo oscuro; se navega entre carpetas Pictures, \
-Music y Documents; cursor visible, barra de tareas inferior, sin iconos en escritorio]" """
+Formato: [media_summary: contenido detallado aquí]
+Esta etiqueta NO se leerá en voz alta. Usa el MISMO idioma del media."""
 
 
 # ── Creación del agente ───────────────────────────────────────────────────────
@@ -136,11 +165,63 @@ def create_agent():
 # ── Streaming del agente ──────────────────────────────────────────────────────
 
 
+def _build_context_block(
+    memory_context: dict,
+    person_id: str | None,
+    current_zone: str | None,
+    has_face_embedding: bool,
+) -> str:
+    """
+    Construye el bloque de contexto que se inyecta como texto del sistema
+    justo antes del mensaje del usuario.
+
+    Incluye:
+    - Memorias generales de Robi (experience + general)
+    - Memorias de la persona actual (si está identificada)
+    - Mapa mental de zonas conocidas
+    - Zona actual de Robi
+    - Instrucción especial de extracción de nombre (si llega un face_embedding)
+    """
+    parts: list[str] = []
+
+    general_mems = memory_context.get("general", [])
+    if general_mems:
+        lines = [f"  - {m.content} (importancia {m.importance})" for m in general_mems]
+        parts.append("MIS RECUERDOS GENERALES:\n" + "\n".join(lines))
+
+    zone_mems = memory_context.get("zone_info", [])
+    if zone_mems:
+        lines = [f"  - {m.content}" for m in zone_mems]
+        parts.append("MAPA MENTAL DE LA CASA:\n" + "\n".join(lines))
+
+    if current_zone:
+        parts.append(f"ZONA ACTUAL DE ROBI: {current_zone}")
+
+    person_mems = memory_context.get("person", [])
+    if person_id and person_mems:
+        lines = [f"  - {m.content} (importancia {m.importance})" for m in person_mems]
+        parts.append(f"LO QUE SÉ DE {person_id.upper()}:\n" + "\n".join(lines))
+    elif person_id:
+        parts.append(f"PERSONA IDENTIFICADA: {person_id} (sin recuerdos previos aún)")
+
+    if has_face_embedding:
+        parts.append(
+            "INSTRUCCIÓN ESPECIAL — EXTRACCIÓN DE NOMBRE:\n"
+            "La persona acaba de decir su nombre en el audio que has recibido. "
+            "Escucha con atención y extrae el nombre. "
+            "Emite [person_name:NOMBRE] en tu respuesta (sustituyendo NOMBRE por el nombre real). "
+            "Si no puedes extraerlo con seguridad, pregunta amablemente: '¿Cómo te llamas?'. "
+            "No emitas [person_name:...] si no estás seguro."
+        )
+
+    return "\n\n".join(parts)
+
+
 async def run_agent_stream(
     user_input: str | None,
     history: list[dict],
     session_id: str = "",
-    user_id: str = "unknown",
+    person_id: str | None = None,
     agent=None,
     audio_data: bytes | None = None,
     audio_mime_type: str = "audio/aac",
@@ -148,31 +229,48 @@ async def run_agent_stream(
     image_mime_type: str = "image/jpeg",
     video_data: bytes | None = None,
     video_mime_type: str = "video/mp4",
-    memory_context: str = "",
+    memory_context: dict | None = None,
+    current_zone: str | None = None,
+    has_face_embedding: bool = False,
 ) -> AsyncIterator[str]:
     """
     Ejecuta el agente y hace streaming de los tokens de texto generados.
 
     Parámetros:
-        user_input:     Texto del usuario. None cuando el input es media (audio/imagen/video).
-        history:        Historial de la sesión como lista de {role, content}.
-        session_id:     Identificador de sesión (para logging).
-        user_id:        Identificador del usuario.
-        agent:          Agente DeepAgents. Si es None usa el modelo directamente.
-        audio_data:     Bytes del audio en crudo (AAC/Opus). Gemini actúa como STT+LLM.
-        audio_mime_type: MIME del audio (default: audio/aac).
-        image_data:     Bytes de imagen JPEG en crudo.
-        image_mime_type: MIME de la imagen (default: image/jpeg).
-        video_data:     Bytes del video MP4 en crudo.
-        video_mime_type: MIME del video (default: video/mp4).
-        memory_context: Contexto de memoria del usuario, añadido como texto junto al media.
+        user_input:        Texto del usuario. None cuando el input es media.
+        history:           Historial de la sesión como lista de {role, content}.
+        session_id:        Identificador de sesión (para logging).
+        person_id:         Slug de la persona identificada por Robi, o None.
+        agent:             Agente DeepAgents. Si es None usa el modelo directamente.
+        audio_data:        Bytes del audio en crudo (AAC/Opus).
+        audio_mime_type:   MIME del audio (default: audio/aac).
+        image_data:        Bytes de imagen JPEG en crudo.
+        image_mime_type:   MIME de la imagen (default: image/jpeg).
+        video_data:        Bytes del video MP4 en crudo.
+        video_mime_type:   MIME del video (default: video/mp4).
+        memory_context:    Dict con claves 'general', 'person', 'zone_info';
+                           resultado de MemoryRepository.get_robi_context().
+        current_zone:      Nombre de la zona donde está Robi ahora.
+        has_face_embedding: True cuando el mensaje incluye un embedding facial —
+                           activa la instrucción especial de extracción de nombre.
 
     Yields:
         Fragmentos de texto (str) a medida que el LLM los genera.
         El primer fragmento puede contener el emotion tag [emotion:TAG].
     """
+    # Construir el bloque de contexto enriquecido
+    ctx_block = _build_context_block(
+        memory_context=memory_context or {},
+        person_id=person_id,
+        current_zone=current_zone,
+        has_face_embedding=has_face_embedding,
+    )
+    system_content = SYSTEM_PROMPT
+    if ctx_block:
+        system_content = f"{SYSTEM_PROMPT}\n\n===CONTEXTO ACTUAL===\n{ctx_block}"
+
     # Construir los mensajes incluyendo el historial
-    messages: list = [SystemMessage(content=SYSTEM_PROMPT)]
+    messages: list = [SystemMessage(content=system_content)]
 
     for msg in history:
         role = msg.get("role", "user")
@@ -189,8 +287,8 @@ async def run_agent_stream(
     if has_media:
         # Gemini recibe el media directamente — actúa como STT+LLM sin pipeline intermedio
         content_parts: list[str | dict] = []
-        if memory_context:
-            content_parts.append({"type": "text", "text": memory_context})
+        # El contexto de memorias ya está inyectado en el system message;
+        # no se añade de nuevo aquí para no duplicar tokens.
         if audio_data is not None:
             content_parts.append(
                 {
@@ -221,7 +319,7 @@ async def run_agent_stream(
         messages.append(HumanMessage(content=user_input or ""))
 
     # ── LOG INPUT ─────────────────────────────────────────────────────────────
-    def _loggable_messages(msgs: list) -> list:
+    def _loggable_messages(msgs: list) -> list:  # noqa: PLR0912
         """Copia de messages sin los bytes b64 raw (los reemplaza con metadata)."""
         result = []
         for m in msgs:
@@ -266,10 +364,11 @@ async def run_agent_stream(
         return result
 
     logger.info(
-        "[AGENT INPUT] session=%s user=%s has_media=%s\n%s",
+        "[AGENT INPUT] session=%s person=%s has_media=%s has_embedding=%s\n%s",
         session_id,
-        user_id,
+        person_id,
         has_media,
+        has_face_embedding,
         __import__("json").dumps(
             _loggable_messages(messages), ensure_ascii=False, indent=2
         ),
@@ -287,9 +386,9 @@ async def run_agent_stream(
                 yield chunk
             if yielded:
                 logger.info(
-                    "[AGENT OUTPUT] session=%s user=%s (via deepagents)\n%s",
+                    "[AGENT OUTPUT] session=%s person=%s (via deepagents)\n%s",
                     session_id,
-                    user_id,
+                    person_id,
                     "".join(full_output),
                 )
                 return
@@ -302,9 +401,9 @@ async def run_agent_stream(
         full_output.append(chunk)
         yield chunk
     logger.info(
-        "[AGENT OUTPUT] session=%s user=%s (via model directo)\n%s",
+        "[AGENT OUTPUT] session=%s person=%s (via model directo)\n%s",
         session_id,
-        user_id,
+        person_id,
         "".join(full_output),
     )
 

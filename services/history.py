@@ -1,6 +1,10 @@
 """
 services/history.py — Historial de conversación con compactación automática.
 
+v2.0 — Robi Amigo Familiar
+  - Sesiones identificadas por `session_id` + `person_id` opcional.
+  - Sin dependencia de `user_id`.
+
 El historial se mantiene en la BD (tabla conversation_history) para persistir
 entre reinicios del servidor. La compactación reduce msgs 0–(N-5) a un resumen
 cuando el total supera el umbral (CONVERSATION_COMPACTION_THRESHOLD, default 20).
@@ -9,7 +13,7 @@ Uso:
     from services.history import ConversationHistory
     history = ConversationHistory()
 
-    await history.add_message("sess_abc", "user", "Hola Robi")
+    await history.add_message("sess_abc", "user", "Hola Robi", person_id="persona_juan_01")
     await history.add_message("sess_abc", "assistant", "[emotion:greeting] Hola!")
     msgs = history.get_history("sess_abc")
     await history.compact_if_needed("sess_abc")
@@ -43,10 +47,18 @@ class ConversationHistory:
 
     # ── API pública ───────────────────────────────────────────────────────────
 
-    async def add_message(self, session_id: str, role: str, content: str) -> None:
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        person_id: str | None = None,
+    ) -> None:
         """
         Añade un mensaje al historial de la sesión.
 
+        - `person_id`: slug de la persona identificada en esta interacción (opcional,
+          usado solo para logging enriquecido; no se persiste en esta tabla).
         - Persiste en la tabla conversation_history.
         - Actualiza la caché en memoria.
         """
