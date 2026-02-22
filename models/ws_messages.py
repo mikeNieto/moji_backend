@@ -1,18 +1,24 @@
 """
 Modelos de mensajes WebSocket — union discriminada con Literal.
 
+v2.0 — Robi Amigo Familiar
+
 Mensajes del cliente (Android → Backend):
   AuthMessage, InteractionStartMessage, AudioEndMessage,
-  TextMessage, ImageMessage, VideoMessage
+  TextMessage, ImageMessage, VideoMessage,
+  ExploreModeMessage, FaceScanModeMessage,
+  PersonDetectedMessage, ZoneUpdateMessage
 
 Mensajes del servidor (Backend → Android):
-  AuthOkMessage, UserRegisteredMessage, EmotionMessage,
+  AuthOkMessage, EmotionMessage,
   TextChunkMessage, ResponseMetaMessage, StreamEndMessage,
-  WsErrorMessage
+  WsErrorMessage, ExplorationActionsMessage,
+  FaceScanActionsMessage, LowBatteryAlertMessage
 """
 
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
-from typing import Literal, Any
 
 
 # ═══════════════════════════════════════════════════════
@@ -29,27 +35,30 @@ class AuthMessage(BaseModel):
 class InteractionStartMessage(BaseModel):
     type: Literal["interaction_start"]
     request_id: str
-    user_id: str  # "unknown" si no reconocido
+    person_id: str | None = None  # None si Robi no ha reconocido a nadie aún
     face_recognized: bool = False
     face_confidence: float | None = None  # similitud coseno 0-1; None si no reconocido
+    face_embedding: str | None = None  # base64 128D; presente cuando se quiere registrar nombre
     context: dict[str, Any] = Field(default_factory=dict)
 
 
 class AudioEndMessage(BaseModel):
     type: Literal["audio_end"]
     request_id: str
+    face_embedding: str | None = None  # base64 128D; adjunto para flujo de captura de nombre
 
 
 class TextMessage(BaseModel):
     type: Literal["text"]
     request_id: str
     content: str
+    face_embedding: str | None = None  # base64 128D; adjunto para flujo de captura de nombre
 
 
 class ImageMessage(BaseModel):
     type: Literal["image"]
     request_id: str
-    purpose: Literal["registration", "context"]
+    purpose: Literal["context"]  # "registration" eliminado — ahora por WS flow
     data: str  # base64 JPEG
 
 
@@ -60,6 +69,41 @@ class VideoMessage(BaseModel):
     data: str  # base64 MP4
 
 
+class ExploreModeMessage(BaseModel):
+    """Android indica que Robi debe entrar en modo exploración autónoma."""
+
+    type: Literal["explore_mode"]
+    request_id: str
+    duration_minutes: int = Field(5, ge=1, le=60)
+
+
+class FaceScanModeMessage(BaseModel):
+    """Android inicia escaneo facial activo — ESP32 gira buscando personas."""
+
+    type: Literal["face_scan_mode"]
+    request_id: str
+
+
+class PersonDetectedMessage(BaseModel):
+    """Android informa de una persona detectada (conocida o desconocida)."""
+
+    type: Literal["person_detected"]
+    request_id: str
+    known: bool
+    person_id: str | None = None  # None si desconocida
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+
+
+class ZoneUpdateMessage(BaseModel):
+    """Android informa de la zona en la que se encuentra Robi."""
+
+    type: Literal["zone_update"]
+    request_id: str
+    zone_name: str
+    category: str = "unknown"  # kitchen | living | bedroom | bathroom | unknown
+    action: Literal["enter", "leave", "discover"]
+
+
 # Union discriminada de mensajes del cliente
 ClientMessage = (
     AuthMessage
@@ -68,6 +112,10 @@ ClientMessage = (
     | TextMessage
     | ImageMessage
     | VideoMessage
+    | ExploreModeMessage
+    | FaceScanModeMessage
+    | PersonDetectedMessage
+    | ZoneUpdateMessage
 )
 
 
@@ -81,17 +129,11 @@ class AuthOkMessage(BaseModel):
     session_id: str
 
 
-class UserRegisteredMessage(BaseModel):
-    type: Literal["user_registered"] = "user_registered"
-    user_id: str
-    name: str
-
-
 class EmotionMessage(BaseModel):
     type: Literal["emotion"] = "emotion"
     request_id: str
-    emotion: str  # happy | excited | sad | empathy | …
-    user_identified: str | None = None
+    emotion: str  # happy | excited | sad | empathy | curious | …
+    person_identified: str | None = None  # person_id si Robi reconoció a alguien
     confidence: float | None = None
 
 
@@ -133,6 +175,7 @@ class ResponseMetaMessage(BaseModel):
     response_text: str
     expression: ExpressionPayload
     actions: list[dict[str, Any]] = Field(default_factory=list)
+    person_name: str | None = None  # extraído de [person_name:NOMBRE] cuando llega embedding
 
 
 class StreamEndMessage(BaseModel):
@@ -149,13 +192,48 @@ class WsErrorMessage(BaseModel):
     recoverable: bool = False
 
 
+class ExplorationActionsMessage(BaseModel):
+    """
+    Backend → Android: instrucciones de movimiento + speech para exploración autónoma.
+    Generadas por el LLM cuando Robi entra en `explore_mode`.
+    """
+
+    type: Literal["exploration_actions"] = "exploration_actions"
+    request_id: str
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    exploration_speech: str = ""  # texto curioso que Robi dice mientras explora
+
+
+class FaceScanActionsMessage(BaseModel):
+    """
+    Backend → Android: secuencia de primitivas ESP32 para que Robi gire
+    buscando personas durante `face_scan_mode`.
+    """
+
+    type: Literal["face_scan_actions"] = "face_scan_actions"
+    request_id: str
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class LowBatteryAlertMessage(BaseModel):
+    """
+    Backend → Android: alerta de batería baja del robot o del teléfono.
+    """
+
+    type: Literal["low_battery_alert"] = "low_battery_alert"
+    battery_level: int = Field(..., ge=0, le=100)  # porcentaje
+    source: Literal["robot", "phone"]
+
+
 # Union discriminada de mensajes del servidor
 ServerMessage = (
     AuthOkMessage
-    | UserRegisteredMessage
     | EmotionMessage
     | TextChunkMessage
     | ResponseMetaMessage
     | StreamEndMessage
     | WsErrorMessage
+    | ExplorationActionsMessage
+    | FaceScanActionsMessage
+    | LowBatteryAlertMessage
 )

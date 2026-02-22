@@ -1,33 +1,11 @@
 """
 Modelos Pydantic para payloads de entrada en la REST API.
 Sin `from typing import` — tipos nativos Python 3.12.
+
+v2.0 — Solo 2 endpoints REST: GET /api/health y GET /api/restore.
+Ninguno requiere request body, por lo que este archivo queda vacío
+de modelos de entrada REST. Se conserva para uso interno / futuro.
 """
 
-from pydantic import BaseModel, Field
-
-
-# ── Usuarios ──────────────────────────────────────────────────────────────────
-
-
-class FaceRegisterRequest(BaseModel):
-    """POST /api/face/register — registrar un nuevo usuario con embedding facial."""
-
-    user_id: str = Field(..., min_length=1, max_length=50)
-    name: str = Field(..., min_length=1, max_length=100)
-    embedding_b64: str = Field(
-        ..., description="Vector FaceNet 128D codificado en base64"
-    )
-
-
-# ── Memoria ───────────────────────────────────────────────────────────────────
-
-
-class MemorySaveRequest(BaseModel):
-    """POST /api/users/{user_id}/memory — guardar una nueva memoria."""
-
-    memory_type: str = Field("fact", pattern="^(fact|preference|conversation)$")
-    content: str = Field(..., min_length=1, max_length=2000)
-    importance: int = Field(5, ge=1, le=10)
-    expires_at: str | None = Field(
-        default=None, description="ISO-8601 datetime; null = sin expiración"
-    )
+# No hay endpoints REST con body en v2.0.
+# Los modelos de mensajes WebSocket están en ws_messages.py.

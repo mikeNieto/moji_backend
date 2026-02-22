@@ -1,6 +1,12 @@
 """
 Modelos Pydantic para respuestas de la REST API.
 Sin `from typing import` — tipos nativos Python 3.12.
+
+v2.0 — Solo 2 endpoints REST: GET /api/health y GET /api/restore.
+  - Eliminadas: UserResponse, UserListResponse, FaceRegisterResponse,
+                MemoryListResponse, MemorySaveResponse, MemoryDeleteResponse
+  - Nuevas: RestorePersonResponse, RestoreZoneResponse,
+            RestoreMemoryResponse, RestoreResponse
 """
 
 from pydantic import BaseModel, Field
@@ -11,10 +17,10 @@ from pydantic import BaseModel, Field
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-    version: str = "1.4"
+    version: str = "2.0"
 
 
-# ── Error estándar (§3.9) ─────────────────────────────────────────────────────
+# ── Error estándar ─────────────────────────────────────────────────────────────
 
 
 class ErrorResponse(BaseModel):
@@ -27,51 +33,52 @@ class ErrorResponse(BaseModel):
     timestamp: str  # ISO-8601
 
 
-# ── Usuarios ──────────────────────────────────────────────────────────────────
+# ── Restauración (GET /api/restore) ───────────────────────────────────────────
 
 
-class UserResponse(BaseModel):
-    user_id: str
+class RestorePersonResponse(BaseModel):
+    """Persona conocida con sus embeddings faciales (base64)."""
+
+    person_id: str
     name: str
-    created_at: str
-    last_seen: str
-    has_face_embedding: bool
+    embeddings: list[str] = Field(
+        default_factory=list,
+        description="Lista de embeddings 128D codificados en base64",
+    )
 
 
-class UserListResponse(BaseModel):
-    users: list[UserResponse]
-    total: int
+class RestoreZonePathResponse(BaseModel):
+    """Camino entre dos zonas del mapa mental."""
+
+    to_zone: str
+    direction_hint: str = ""
+    distance_cm: int | None = None
 
 
-class FaceRegisterResponse(BaseModel):
-    user_id: str
+class RestoreZoneResponse(BaseModel):
+    """Zona del mapa mental de la casa."""
+
     name: str
-    message: str = "Usuario registrado correctamente"
+    category: str  # kitchen | living | bedroom | bathroom | unknown
+    description: str = ""
+    accessible: bool = True
+    paths: list[RestoreZonePathResponse] = Field(default_factory=list)
 
 
-# ── Memoria ───────────────────────────────────────────────────────────────────
+class RestoreMemoryResponse(BaseModel):
+    """Recuerdo general de Robi (sin ligarse a persona específica)."""
 
-
-class MemoryItemResponse(BaseModel):
-    id: int
-    memory_type: str
+    type: str  # experience | zone_info | person_fact | general
     content: str
     importance: int = Field(ge=1, le=10)
-    timestamp: str
-    expires_at: str | None = None
 
 
-class MemoryListResponse(BaseModel):
-    user_id: str
-    memories: list[MemoryItemResponse]
-    total: int
+class RestoreResponse(BaseModel):
+    """
+    Respuesta completa de GET /api/restore.
+    Permite a Android reconstruir su DB local tras reinstalación.
+    """
 
-
-class MemorySaveResponse(BaseModel):
-    id: int
-    message: str = "Memoria guardada correctamente"
-
-
-class MemoryDeleteResponse(BaseModel):
-    deleted: int
-    message: str = "Memorias eliminadas"
+    people: list[RestorePersonResponse] = Field(default_factory=list)
+    zones: list[RestoreZoneResponse] = Field(default_factory=list)
+    memories: list[RestoreMemoryResponse] = Field(default_factory=list)
