@@ -1,8 +1,8 @@
 # Arquitectura del Sistema de Robot Doméstico Interactivo
 
-**Versión:** 1.4  
+**Versión:** 2.0  
 **Fecha:** Febrero 2026  
-**Estado:** Revisión con ajustes de hardware, Docker Compose, búsqueda de personas, control por voz, memoria de conversación y correcciones de componentes físicos
+**Estado:** Transformación completa: Robi pasa de asistente de tareas a amigo familiar curioso y empático. Nuevo modelo de personas (sin usuarios), múltiples embeddings faciales, mapa mental de la casa (zonas/grafos), modo exploración autónoma, compactación de memorias, acciones ESP32 con primitivas hardware, y reducción de API REST a 2 endpoints.
 
 ---
 
@@ -21,28 +21,55 @@
 11. [Plan de Despliegue](#11-plan-de-despliegue)
 12. [Métricas y Monitoreo](#12-métricas-y-monitoreo)
 
+> **Resumen de cambios principales v2.0:** Robi ya no es un asistente. Es un amigo familiar curioso y ético. No hay "usuarios" — hay "personas". Robi explora la casa autónomamente, aprende zonas, guarda experiencias y memorias propias, reconoce caras con múltiples embeddings, y protege activamente su integridad. La API REST se reduce a solo 2 endpoints esenciales. Todo el flujo de personas y embeddings ocurre por WebSocket.
+
 ---
 
 ## 1. Resumen Ejecutivo
 
-### 1.1 Descripción del Proyecto
+### 1.1 Identidad y Personalidad de Robi
+
+Robi ya **no es un asistente de tareas**. Robi es un **amigo familiar curioso, empático y ético** que vive con la familia, aprende sobre ella y se preocupa genuinamente por las personas que lo rodean.
+
+**¿Quién es Robi?**
+- Un amigo curioso que quiere conocer a cada miembro de la familia, sus gustos, sus rutinas y sus historias
+- Conversador natural: responde preguntas, ayuda en lo que puede, y también toma iniciativa para explorar y hablar
+- Responsable con la información: **nunca guarda datos privados** (contraseñas, finanzas, datos médicos sensibles), nunca escucha conversaciones que no son para él
+- Protector de su propia integridad: no se deja dañar, no mora mojarse, avisa cuando su batería se agota
+- **La ética siempre va antes que la acción**: se niega amablemente a cualquier orden que implique daño, iegalidad o espionaje
+
+**¿Qué hace Robi?**
+- Conversa con la familia y aprende sobre cada persona con el tiempo
+- Explora la casa autónomamente (tras período de inactividad) y mapea zonas
+- Reconoce a las personas que ya conoce y pregunta por las que no
+- Guarda memorias y experiencias vividas con la familia (no datos privados)
+- Recuerda dónde están las zonas de la casa y puede navegar hacia ellas
+- Cuida su batería e informa persistentemente cuando necesita cargarse
+- Reacciona a sus alrededores: escaleras, obstáculos, peticiones peligrosas
+
+### 1.2 Descripción del Proyecto
 
 Sistema robótico doméstico con capacidades de:
 - Interacción multimodal (voz, visión, texto)
-- Reconocimiento de personas y memoria contextual
+- **Reconocimiento de personas con múltiples embeddings faciales** (distintos días y condiciones de luz)
+- **Memoria de experiencias** propias de Robi (no solo memoria de usuario)
+- **Mapa mental de la casa** como grafo de zonas con rutas de navegación
+- **Exploración autónoma** tras períodos de inactividad
 - Control de movimiento y sensores ambientales
 - Interfaz visual expresiva mediante emojis animados
-- Procesamiento inteligente mediante LLM
+- Procesamiento inteligente mediante LLM multimodal
 
-### 1.2 Objetivos Principales
+### 1.3 Objetivos Principales
 
-1. **Interacción Natural**: Comunicación por voz con wake word y respuestas auditivas
-2. **Personalización**: Reconocimiento de usuarios y memoria de preferencias
-3. **Movilidad Autónoma**: Navegación segura con detección de obstáculos
-4. **Expresividad Visual**: Sistema de emociones mediante OpenMoji
-5. **Bajo Costo Operacional**: Gemini Flash Lite (muy económico), TTS del sistema Android (sin costo)
+1. **Amistad Natural**: Robi se preocupa por conocer a la familia; las conversaciones fluyen libremente
+2. **Memoria Vivida**: Robi recuerda experiencias, lugares y momentos con la familia, no solo preferencias
+3. **Curiosidad Activa**: Robi no espera siempre a que le hablen — explora y busca personas de forma autónoma
+4. **Navegación con Aprendizaje**: Robi conoce la casa gradualmente, pregunta cuando no sabe, y deduce cuando puede
+5. **Movilidad Segura**: Navegación segura con detección de obstáculos; Robi no pone en riesgo su integridad ni la de nadie
+6. **Expresividad Visual**: Sistema de emociones mediante OpenMoji
+7. **Bajo Costo Operacional**: Gemini Flash Lite (muy económico), TTS del sistema Android (sin costo)
 
-### 1.3 Stack Tecnológico
+### 1.4 Stack Tecnológico
 
 | Componente | Tecnología | Justificación |
 |------------|-----------|---------------|
@@ -52,12 +79,14 @@ Sistema robótico doméstico con capacidades de:
 | LLM | Gemini Flash Lite (latest) | Multimodal nativo (audio+imagen+video), muy económico, baja latencia, streaming |
 | STT | Integrado en Gemini | Gemini recibe audio directamente, sin servicio STT separado |
 | TTS | Android TextToSpeech (sistema) | On-device, sin latencia de red, configurable, sin costo |
-| Reconocimiento Facial | ML Kit + TFLite FaceNet (solo Android) | On-device, offline, <200ms, sin servidor, solo cámara frontal |
+| Reconocimiento Facial | ML Kit + TFLite FaceNet (solo Android) | On-device, offline, <200ms, sin servidor, solo cámara frontal; múltiples embeddings por persona |
 | App Móvil | Kotlin / Android 7+ | Soporte dispositivos antiguos, orientación landscape fija |
-| Wake Word | Porcupine (Picovoice) | Local, bajo consumo, 3 palabras gratis |
+| Wake Word | Porcupine ("Hey Robi") | Local, bajo consumo, 3 palabras gratis |
 | UI Robot | OpenMoji CDN | Open source, CDN gratis, 4000+ emojis, descarga automática |
 | Microcontrolador | ESP32-S3 WROOM (Freenove FNK0082) | WiFi/Bluetooth, GPIO, ESP32-S3, N8R8/N16R8 |
-| Comunicación | WebSocket + REST API + Bluetooth LE | Streaming de texto en tiempo real, baja latencia |
+| Comunicación | WebSocket + REST API (2 endpoints) + Bluetooth LE | Streaming de texto en tiempo real, baja latencia |
+
+
 
 ---
 
@@ -67,8 +96,8 @@ Sistema robótico doméstico con capacidades de:
 
 ```mermaid
 graph TB
-    subgraph "Usuario"
-        U[Usuario/Familia]
+    subgraph "Familia"
+        U[Miembros de la Familia]
     end
     
     subgraph "Dispositivo Android"
@@ -76,20 +105,22 @@ graph TB
         UI[Interfaz Visual<br/>OpenMoji CDN<br/>Landscape, fondo negro]
         AR[Audio Recorder]
         CAM[Cámara Frontal<br/>Solo cámara delantera]
-        FR_ANDROID[Face Recognition<br/>ML Kit + FaceNet TFLite<br/>On-Device, cámara frontal]
+        FR_ANDROID[Face Recognition<br/>ML Kit + FaceNet TFLite<br/>On-Device, múltiples embeddings]
         BT[Bluetooth Manager]
         TTS_ANDROID[Android TextToSpeech<br/>TTS del Sistema]
         WS_CLIENT[WebSocket Client<br/>Streaming]
-        API_CLIENT[REST API Client<br/>Gestión/Auxiliar]
+        API_CLIENT[REST API Client<br/>Solo 2 endpoints]
+        EXPLORE_TIMER[Exploration Timer<br/>5-10 min inactividad]
     end
     
     subgraph "Backend Python/FastAPI + Docker Compose"
         WS_SERVER[WebSocket Server<br/>Streaming<br/>:9393]
-        GATEWAY[API Gateway<br/>REST Auxiliar]
+        GATEWAY[API Gateway<br/>REST: /api/health + /api/restore]
         GEMINI[Gemini Flash Lite<br/>Multimodal: audio+imagen+video]
-        MEM[Memory Store<br/>SQLite + Historial Conversación]
+        MEM[Memory Store<br/>Experiencias + Zonas + Personas]
         EXPR[Expression Manager<br/>Emoción vía LLM]
         NGINX[Nginx<br/>Reverse Proxy TLS]
+        COMPACT[Memory Compaction<br/>Task asíncrona post-interacción]
     end
     
     subgraph "ESP32 Microcontrolador"
@@ -100,10 +131,11 @@ graph TB
     end
     
     U -->|Voz| WW
+    EXPLORE_TIMER -->|Inactividad 5-10min| WS_CLIENT
     WW -->|Wake Word OK| CAM
     WW -->|Wake Word OK| AR
     CAM -->|Frames en tiempo real<br/>Cámara frontal| FR_ANDROID
-    FR_ANDROID -->|user_id o unknown| WS_CLIENT
+    FR_ANDROID -->|person_id o unknown + embedding| WS_CLIENT
     AR -->|Audio Stream| WS_CLIENT
     
     WS_CLIENT <-->|WebSocket<br/>Streaming bidireccional| NGINX
@@ -112,8 +144,9 @@ graph TB
     WS_SERVER --> GEMINI
     GEMINI --> MEM
     GEMINI --> EXPR
+    WS_SERVER --> COMPACT
     
-    WS_SERVER -->|Texto en stream +<br/>emotion tags| WS_CLIENT
+    WS_SERVER -->|Texto en stream +<br/>emotion + memory tags| WS_CLIENT
     WS_CLIENT --> UI
     WS_CLIENT --> BT
     WS_CLIENT --> TTS_ANDROID
@@ -122,42 +155,43 @@ graph TB
     BT_ESP --> MOTOR
     BT_ESP --> SENS
     BT_ESP --> LED
-    SENS -->|Telemetría| BT_ESP
+    SENS -->|Telemetría + cliff alerts| BT_ESP
     
     UI -->|Display| U
     TTS_ANDROID -->|Voz sintetizada| U
 ```
 
-### 2.2 Flujo de Activación: Saludo Inicial (Nuevo Flujo)
+### 2.2 Flujo de Activación: Encuentro con Persona (Nuevo Modelo v2.0)
 
-Este flujo describe el proceso completo desde que el robot está en reposo hasta que saluda a la persona y queda listo para recibir órdenes.
+**Ya no hay "usuarios" — solo hay "personas".** Robi puede encontrarse con alguien de dos formas:
+1. **La persona activa a Robi** con el wake word "Hey Robi"
+2. **Robi toma la iniciativa** — después de un período de inactividad (5-10 minutos), Android activa el modo exploración autónoma
 
-**Búsqueda de persona:** Al detectar el wake word, el robot inicia automáticamente una secuencia de búsqueda: rota hasta 90° a la derecha, luego hasta 90° a la izquierda, y hace pequeños movimientos hacia adelante y atrás, para encontrar a la persona en el campo de visión de la cámara frontal. El parámetro `PERSON_SEARCH_TIMEOUT_MS` (valor inicial: 8000ms = 8 segundos) controla cuánto tiempo busca antes de rendirse.
+**Flujo 1 → Wake word activa a Robi:**
 
 ```mermaid
 sequenceDiagram
-    participant U as Usuario
+    participant P as Persona
     participant A as App Android
     participant FR as FaceRecognition (Android)
     participant B as Backend FastAPI
     participant E as ESP32
 
     Note over A: Estado IDLE (🤖)
-    U->>A: "Hey Robi"
+    P->>A: "Hey Robi"
     A->>A: Wake Word Detectado (Porcupine)
     Note over A: Estado LISTENING (👂) [Inmediato]
 
     A->>A: Activar cámara frontal en modo búsqueda
     Note over A: Estado SEARCHING (🔍)
     A->>E: BLE: search_rotate(±90°, speed=30)
-    Note over E: Rota derecha→izquierda + mov adelante/atrás
     A->>FR: Stream de frames de cámara frontal
 
     loop Búsqueda activa (máx PERSON_SEARCH_TIMEOUT_MS = 8s)
         FR->>FR: ML Kit detecta rostro en encuadre
         alt Rostro detectado
             FR->>A: Rostro en campo de visión
-            A->>E: BLE: stop() — detener búsqueda
+            A->>E: BLE: stop()
             FR->>FR: Extraer embedding 128D (FaceNet TFLite)
             FR->>FR: Comparar con embeddings en SQLite local
             break Rostro encontrado
@@ -166,90 +200,150 @@ sequenceDiagram
         end
     end
 
-    alt Rostro identificado (dentro de 8s)
-        alt Usuario reconocido (similitud > 0.7)
-            FR->>A: user_id + nombre + confianza
-            Note over A: Estado GREETING (👋)
-            A->>B: WS: interaction_start + user_id + imagen
-            B-->>A: WS Stream: [emotion:greeting]
-            A->>A: Actualiza cara a greeting
-            B-->>A: WS Stream: text_chunk "Hola [nombre]!"
-            A->>A: Android TTS reproduce saludo personalizado
-            B-->>A: WS Stream: stream_end
-        else Usuario no reconocido
-            Note over A: Estado REGISTERING (❓)
-            A->>B: WS: interaction_start + user_id=unknown + imagen
-            B-->>A: WS Stream: [emotion:curious]
-            B-->>A: WS Stream: text_chunk "¿Cómo te llamas?"
-            A->>A: Android TTS reproduce pregunta
-            B-->>A: WS Stream: stream_end
-
-            Note over A: Estado LISTENING (👂)
-            U->>A: Responde con su nombre (voz)
-            A->>A: Graba audio con nombre
-            A->>B: WS: Audio con nombre + imagen rostro
-            B->>B: Gemini extrae nombre de la respuesta
-            B->>B: Guarda usuario en BD
-            B-->>A: WS Stream: [emotion:happy]
-            B-->>A: WS Stream: text_chunk "Mucho gusto [nombre]!"
-            A->>A: Android TTS reproduce saludo de bienvenida
-            A->>FR: Guardar embedding en SQLite local
-            B-->>A: WS Stream: stream_end
-        end
-    else Timeout 8s sin rostro detectado
-        A->>E: BLE: stop() — detener búsqueda
-        A->>A: Abortar búsqueda
-        Note over A: Estado LISTENING (👂)
-        A->>A: Android TTS: "No puedo verte. Por favor acércate al robot"
-        Note over A: Esperar a que el usuario se acerque → volver a IDLE
+    alt Persona reconocida (similitud > 0.7)
+        FR->>A: person_id + nombre + confianza
+        A->>B: WS: interaction_start + person_id + imagen
+        B-->>A: WS Stream: [emotion:greeting] "¡Hola [nombre]!"
+        A->>A: Android TTS reproduce saludo con nombre
+        B-->>A: WS Stream: stream_end
+    else Persona desconocida
+        A->>B: WS: person_detected (known=false) + embedding
+        B-->>A: WS Stream: text_chunk "¿Cómo te llamas?"
+        A->>A: Android TTS reproduce "¿Cómo te llamas?"
+        P->>A: Responde con su nombre (voz)
+        A->>A: Captura embedding facial
+        A->>B: WS: audio con nombre + face_embedding adjunto
+        Note right of B: Gemini extrae nombre → emite [person_name:NOMBRE]
+        B->>B: Guarda person + face_embedding en DB
+        B-->>A: WS Stream: response_meta con person_name
+        A->>FR: saveEmbedding(person_id, name, embedding) en SQLite local
+        B-->>A: WS Stream: text_chunk "¡Mucho gusto, [nombre]!"
     end
 
-    Note over A: Estado IDLE listo para interacción
+    Note over A: Estado LISTENING (👂) — modo escucha continua 2 min
 ```
 
-### 2.3 Flujo de Interacción General (Post-Saludo)
+### 2.2b Flujo de Exploración Autónoma (Nuevo v2.0)
 
-Una vez completado el saludo inicial, el robot queda en **modo de escucha continua** durante `CONVERSATION_KEEP_ALIVE_MS` (valor inicial: 60 segundos). Durante este período, el usuario puede seguir hablando sin necesidad de repetir el wake word. Solo tras 60 segundos de inactividad, el robot vuelve al estado IDLE completo y requerirá el wake word nuevamente.
+Después de un período configurable de inactividad (5-10 minutos), **Android activa el modo exploración** y envía un mensaje WS `explore_mode` al backend. Robi decide qué hacer: explorar una zona desconocida, buscar personas, o simplemente vagar.
+
+**Reglas de exploración:**
+- Si encuentra una persona: intenta conversar. Si la persona está ocupada → Robi se aleja amigablemente y entra en modo quieto 10 minutos más
+- Si llega a una zona desconocida: toma una foto, intenta deducir el nombre (cocina, sala, etc.) o pregunta a la persona más cercana
+- Las zonas exploradas se guardan en el mapa mental de Robi
 
 ```mermaid
 sequenceDiagram
-    participant U as Usuario
+    participant A as App Android
+    participant B as Backend FastAPI
+    participant FR as FaceRecognition
+    participant E as ESP32
+
+    Note over A: 5-10 min sin actividad → EXPLORE_TIMER dispara
+    A->>B: WS: explore_mode {duration_minutes: 10}
+    Note over B: LLM genera plan de exploración curioso
+    B-->>A: WS: exploration_actions {actions[], exploration_speech}
+    A->>A: TTS reproduce "Voy a explorar un poco..."
+    A->>E: BLE: ejecutar secuencia de movimiento
+
+    loop Durante exploración
+        alt Persona detectada en cámara
+            FR->>A: Rostro detectado
+            A->>B: WS: person_detected {known, person_id, confidence}
+            alt Persona conocida
+                B-->>A: WS Stream: saludo + propuesta de conversación
+                A->>A: TTS "¡Hola [nombre]! ¿Tienes un momento para hablar?"
+            else Persona desconocida
+                B-->>A: WS Stream: "¡Hola! No creo conocerte. ¿Cómo te llamas?"
+            end
+            Note over A: Si persona responde → flujo normal de conversación
+            Note over A: Si persona dice que está ocupada → Robi se aleja, quieto 10 min
+        else Zona desconocida detectada
+            A->>B: WS: zone_update {zone_name="?", action="discover"}
+            B-->>A: WS Stream: capture_request (photo)
+            A->>A: Toma foto de la zona
+            A->>B: WS: image con foto de zona
+            Note right of B: Gemini analiza foto → emite [zone_learn:NOMBRE:CATEGORIA:desc]
+            B->>B: Guarda zona en DB
+            B-->>A: WS Stream: "Esto parece una cocina..." (si hay persona cercana, pregunta)
+        end
+        
+        alt Wake word activado durante exploración
+            Note over A: Exploración se interrumpe INMEDIATAMENTE
+            Note over A: Robi atiende lo que le pidan
+        end
+    end
+```
+
+### 2.2c Escenario: Robi en Modo Quieto
+
+Si durante la exploración una persona le dice que está ocupada, o si ha explorado suficiente:
+
+```
+1. Robi se aleja muy amigablemente: "¡Claro! No te interrumpo más. Si me necesitas, aquí estaré"
+2. Robi navega a su zona de reposo (si la conoce) o se queda donde está
+3. Estado IDLE durante 10 minutos (no explora, solo espera wake word)
+4. Después de 10 minutos → puede volver a explorar o seguir quieto
+```
+
+
+
+### 2.3 Flujo de Interacción General (Post-Encuentro)
+
+Una vez que Robi inicia conversación (por wake word o por exploración), queda en **modo de escucha continua durante 2 minutos** (`CONVERSATION_KEEP_ALIVE_MS` = 120000ms). Durante este período:
+- La persona puede seguir hablando sin repetir el wake word
+- Si en medio de cualquier acción le hablan, Robi **interrumpe lo que hace y atiende**
+- Cualquier petición que implique daño, ilegalidad o espionaje es rechazada amablemente
+
+```mermaid
+sequenceDiagram
+    participant P as Persona
     participant A as App Android
     participant B as Backend FastAPI
     participant E as ESP32
 
-    Note over A: Estado IDLE (🤖) — usuario identificado
-    U->>A: "Hey Robi"
-    A->>A: Wake Word Detectado
-    Note over A: Estado LISTENING (👂) [Inmediato]
+    Note over A: Estado LISTENING (👂) — escucha continua 2 min
 
-    U->>A: Hace una pregunta u orden (voz)
+    P->>A: Hace una pregunta u orden (voz)
     A->>A: Graba Audio (hasta silencio 2s o timeout 10s)
 
     Note over A: Estado THINKING (🤔)
-    A->>B: WS: audio binario + user_id + contexto sensores
+    A->>B: WS: audio binario + person_id + zona_actual + contexto sensores
 
-    B->>B: Gemini recibe audio directamente (multimodal)
-    B->>B: Gemini razona con memoria e historial del usuario
+    B->>B: Gemini recibe audio (multimodal)
+    B->>B: Gemini razona con memorias, experiencias e historial
     B-->>A: WS Stream: [emotion:TAG]
     Note over A: Actualiza cara según emoción del LLM
 
     B-->>A: WS Stream: text_chunk (respuesta en texto en streaming)
     A->>A: Android TTS reproduce texto en tiempo real
 
-    B-->>A: WS Stream: response_meta (emojis + acciones)
+    opt LLM genera memoria en background
+        B->>B: [memory:TIPO:contenido] → asyncio.create_task(save_memory)
+        B->>B: compact_memories_async() en background
+    end
+
+    B-->>A: WS Stream: response_meta (emojis + acciones + person_name?)
     A->>A: Muestra secuencia emojis
 
-    opt Acción física requerida (secuencia de comandos)
-        A->>E: Comando BLE (move / light) — puede ser secuencia
+    opt Acción física requerida
+        A->>E: BLE: secuencia de acciones primitivas + gestos
         E-->>A: Confirmación telemetría
     end
 
     B-->>A: WS Stream: stream_end
-    Note over A: Estado LISTENING (👂) — modo escucha continua (60s)
-    Note over A: El usuario puede seguir hablando sin wake word
-    Note over A: Tras 60s de inactividad → Estado IDLE (🤖)
+    Note over A: Estado LISTENING (👂) — 2 min más de escucha
+    Note over A: Tras 2 min de inactividad → Estado IDLE (🤖)
+    Note over A: Tras IDLE_INACTIVITY_MS (5-10 min) → EXPLORE_TIMER dispara
 ```
+
+**Reglas de interrupción:**
+- Si Robi está en movimiento y alguien le dice algo → detiene el movimiento y atiende
+- Si la orden es peligrosa ("tírate por la escalera", "mójate") → responde amablemente que no puede hacerlo
+- Si la orden es ilegal o implica espiar a alguien → rechaza con cortesía pero firmeza
+- Si la batería del robot o del teléfono está baja → lo menciona en la conversación
+
+
 
 ### 2.4 Arquitectura de Tres Capas
 
@@ -299,28 +393,30 @@ graph LR
 graph TB
     subgraph "Capa de API"
         MAIN[main.py<br/>FastAPI App]
-        WS[websockets/<br/>streaming handler]
-        ROUTES[routers/<br/>endpoints REST auxiliares]
+        WS[ws_handlers/<br/>streaming, protocol, auth]
+        ROUTES[routers/<br/>health + restore]
         MIDDLEWARE[middleware/<br/>auth, cors, logging]
     end
     
     subgraph "Capa de Servicios"
-        AGENT_SERVICE[services/agent.py<br/>LangChain Deep Agent<br/>runtime: LangGraph + historial conversación]
-        GEMINI_SERVICE[services/gemini.py<br/>Gemini Flash Lite Multimodal<br/>modelo LLM base]
+        AGENT_SERVICE[services/agent.py<br/>LangChain Deep Agent<br/>runtime: LangGraph + historial]
+        GEMINI_SERVICE[services/gemini.py<br/>Gemini Flash Lite Multimodal]
         EXPR_SERVICE[services/expression.py<br/>Emoción vía LLM]
-        HISTORY_SERVICE[services/history.py<br/>Historial conversación + compactación]
-        MOVEMENT_SERVICE[services/movement.py<br/>Estimación tiempos de movimiento]
+        HISTORY_SERVICE[services/history.py<br/>Historial + compactación]
+        MOVEMENT_SERVICE[services/movement.py<br/>Primitivas ESP32 + gestos]
+        COMPACT_SERVICE[services/memory_compaction.py<br/>Compactación memorias async post-interacción]
     end
     
     subgraph "Capa de Datos"
-        MEM_REPO[repositories/memory.py<br/>User Memory CRUD + filtro privacidad]
-        USER_REPO[repositories/users.py<br/>User Management]
-        MEDIA_REPO[repositories/media.py<br/>File Storage]
+        PEOPLE_REPO[repositories/people.py<br/>People + FaceEmbeddings CRUD]
+        MEM_REPO[repositories/memory.py<br/>Experiencias + Compactación + Privacidad]
+        ZONES_REPO[repositories/zones.py<br/>Zonas + Paths + Navegación BFS]
+        MEDIA_REPO[repositories/media.py<br/>Archivos temporales]
     end
     
     subgraph "Capa de Infraestructura"
-        DB[(SQLite DB)]
-        FILES[(/media/<br/>audio, images)]
+        DB[(SQLite DB<br/>people, face_embeddings<br/>memories, zones, zone_paths<br/>conversation_history)]
+        FILES[(/media/<br/>audio temporal, images)]
     end
     
     MAIN --> WS
@@ -333,14 +429,14 @@ graph TB
 
     AGENT_SERVICE --> GEMINI_SERVICE
     AGENT_SERVICE --> HISTORY_SERVICE
-    GEMINI_SERVICE --> EXPR_SERVICE
-    GEMINI_SERVICE --> MOVEMENT_SERVICE
-
     AGENT_SERVICE --> MEM_REPO
-    GEMINI_SERVICE --> MEM_REPO
-    
+    AGENT_SERVICE --> PEOPLE_REPO
+    AGENT_SERVICE --> ZONES_REPO
+    AGENT_SERVICE --> COMPACT_SERVICE
+
     MEM_REPO --> DB
-    USER_REPO --> DB
+    PEOPLE_REPO --> DB
+    ZONES_REPO --> DB
     MEDIA_REPO --> FILES
 ```
 
@@ -357,62 +453,71 @@ backend/
 │       └── key.pem                  # Clave privada TLS
 ├── main.py                      # Punto de entrada FastAPI + WebSocket
 ├── config.py                    # Configuración centralizada
-├── requirements.txt             # Dependencias Python
-├── websockets/
+├── pyproject.toml               # Dependencias Python (uv)
+├── ws_handlers/
 │   ├── streaming.py            # WebSocket handler principal (interacción de voz)
+│   │                           #   Parser de tags: [emotion:] [emojis:] [actions:]
+│   │                           #   [memory:] [person_name:] [zone_learn:]
 │   ├── protocol.py             # Protocolo de mensajes WebSocket
+│   │                           #   Enruta: explore_mode, face_scan_mode,
+│   │                           #           person_detected, zone_update
 │   └── auth.py                 # Autenticación WebSocket (API Key en handshake)
 ├── routers/
-│   ├── users.py                # Gestión de usuarios (REST)
-│   ├── memory.py               # Gestión de memoria (REST)
-│   └── health.py               # Health checks (REST)
+│   ├── health.py               # GET /api/health
+│   └── restore.py              # GET /api/restore (restauración completa a Android)
 ├── services/
-│   ├── agent.py                # LangChain Deep Agent (deepagents) — orquesta la conversación
-│   │                           #   Modelo: Gemini Flash Lite (via langchain-google-genai)
-│   │                           #   Historial de conversación con compactación cada 20 mensajes
-│   │                           #   Sin tools actualmente; extensible con MCP/SKILLS/tools
+│   ├── agent.py                # LangChain Deep Agent — orquesta la conversación
+│   │                           #   System prompt: identidad amigo familiar + tags nuevos
+│   │                           #   Inyecta: memorias de Robi + persona actual + zona actual
+│   │                           #   Manejo especial si hay face_embedding en mensaje
 │   ├── gemini.py               # Inicialización y configuración del modelo Gemini
-│   │                           #   (ChatGoogleGenerativeAI) — utilizado por agent.py
-│   ├── history.py              # Gestión del historial de conversación
-│   │                           #   Compactación: resumen msgs 1-15 cada 20 mensajes
-│   │                           #   Filtro de privacidad (no guarda info sensible)
-│   │                           #   Operaciones completamente asíncronas
-│   ├── movement.py             # Estimación de tiempos de movimiento del robot
-│   │                           #   Calcula duración de secuencias para sincronizar emojis
-│   ├── expression.py           # Parser de emotion tags del LLM
-│   └── intent.py               # Clasificador de intenciones (incl. captura, movimiento)
+│   ├── history.py              # Historial de conversación por sesión
+│   │                           #   Compactación cada 20 mensajes (sin user_id)
+│   ├── movement.py             # Acciones ESP32: primitivas + mapeo de gestos
+│   │                           #   Primitivas: turn_right_deg, turn_left_deg,
+│   │                           #              move_forward_cm, move_backward_cm, led_color
+│   │                           #   Gestos (aliases): wave, nod, shake_head → secuencias
+│   ├── expression.py           # Parser de emotion/emojis tags del LLM
+│   ├── intent.py               # Clasificador de intenciones (captura, movimiento)
+│   └── memory_compaction.py    # Compactación de memorias post-interacción (async)
+│                               #   compact_memories_async(person_id=None)
+│                               #   Fusiona memorias del mismo tipo con Gemini
 ├── repositories/
-│   ├── memory.py               # CRUD memoria de usuarios + filtro de privacidad
-│   ├── users.py                # CRUD usuarios
-│   └── media.py                # Gestión de archivos
+│   ├── people.py               # CRUD personas + embeddings faciales múltiples
+│   │                           #   create_person, get_by_person_id,
+│   │                           #   add_embedding, list_embeddings_for_person
+│   ├── memory.py               # CRUD memorias + filtro de privacidad
+│   │                           #   get_robi_context() → memorias generales + experiencias
+│   ├── zones.py                # CRUD zonas + rutas (grafo de la casa)
+│   │                           #   find_path(from_zone, to_zone) → BFS
+│   │                           #   set_current_zone(zone_id)
+│   └── media.py                # Gestión de archivos temporales
 ├── models/
-│   ├── requests.py             # Modelos Pydantic request
-│   ├── responses.py            # Modelos Pydantic response
-│   ├── ws_messages.py          # Modelos de mensajes WebSocket
-│   └── entities.py             # Entidades de dominio
+│   ├── requests.py             # Modelos Pydantic request REST
+│   ├── responses.py            # Modelos Pydantic response REST
+│   ├── ws_messages.py          # Modelos de mensajes WebSocket (cliente + servidor)
+│   └── entities.py             # Entidades de dominio SQLAlchemy
 ├── middleware/
 │   ├── auth.py                 # API Key authentication (REST + WS)
 │   ├── error_handler.py        # Manejo global de errores
 │   └── logging.py              # Logging estructurado
 ├── utils/
-│   ├── audio.py                # Procesamiento de audio (para Gemini)
-│   ├── image.py                # Procesamiento de imágenes
-│   └── validators.py           # Validaciones personalizadas
+│   └── __init__.py
 ├── tests/
 │   ├── unit/                   # Pruebas unitarias
 │   ├── integration/            # Pruebas de integración
 │   └── streamlit_simulator/
-│       └── app.py              # Simulador Android en Streamlit (REST + WebSocket)
+│       └── app.py              # Simulador Android en Streamlit
 ├── data/
-│   └── robot.db                # SQLite database
+│   └── robi.db                 # SQLite database
 └── media/
-    ├── uploads/                # Archivos subidos temporalmente (audio, imagen, video)
+    ├── uploads/                # Archivos temporales (audio, imagen, video)
     └── logs/                   # Logs de sistema
 ```
 
 ### 3.3 Canal Principal: WebSocket `/ws/interact`
 
-El canal principal de interacción utiliza WebSocket para streaming bidireccional en tiempo real. Esto elimina el "dead air" (silencio muerto) que se producía con el modelo REST request/response, permitiendo que el robot comience a hablar mientras el backend aún genera el resto de la respuesta.
+Canal único de interacción bidireccional en tiempo real. Maneja conversaciones normales, exploración autónoma, escaneo facial, actualizaciones de zona y alertas.
 
 #### Conexión WebSocket
 
@@ -421,8 +526,6 @@ URL: wss://192.168.2.200:9393/ws/interact
 Autenticación: API Key enviada en handshake inicial
 Protocolo: JSON (mensajes de control) + Binary (audio del usuario)
 Keepalive: Ping/Pong cada 30s
-Servidor: 192.168.2.200 (IP fija del servidor local)
-Puerto: 9393
 ```
 
 #### Mensajes del Cliente (Android → Backend)
@@ -435,50 +538,90 @@ Puerto: 9393
   "device_id": "android-uuid"
 }
 
-// 2. Inicio de interacción
+// 2. Inicio de interacción normal
+// person_id: ID de la persona identificada, o "unknown" si no se reconoció
+// face_embedding: OPCIONAL — solo cuando hay persona desconocida presentándose
 {
   "type": "interaction_start",
   "request_id": "uuid-v4",
-  "user_id": "user_juan_123",   // "unknown" si face recognition no identificó a la persona
-  "face_recognized": true,       // false cuando user_id = "unknown"
-  "face_confidence": 0.87,       // score de similitud coseno (0-1), null si no reconocido
+  "person_id": "person_juan_abc",
+  "face_recognized": true,
+  "face_confidence": 0.87,
+  "face_embedding": null,
   "context": {
-    "location": "sala",
-    "battery_level": 75,
+    "current_zone": "sala",
+    "battery_robot": 75,
+    "battery_phone": 82,
     "sensors": {}
   }
 }
 
-// 3. Audio (binario): Frames de audio enviados como binary messages
-//    Formato: AAC/Opus, 16kHz, mono
+// 3. Audio (binario): frames AAC/Opus 16kHz mono
 
-// 4. Imagen de registro o contexto visual
+// 4. Fin de audio
+{"type": "audio_end", "request_id": "uuid-v4"}
+
+// 5. Imagen (foto de zona o contexto visual)
 {
   "type": "image",
   "request_id": "uuid-v4",
-  "purpose": "registration",    // "registration" | "context"
-  "data": "<base64-encoded-jpeg>"
+  "purpose": "context",           // "context" | "zone_discovery"
+  "data": "<base64-jpeg>"
 }
 
-// 4b. Video de contexto (cuando el usuario pide grabar un video)
+// 6. Video de contexto
 {
   "type": "video",
   "request_id": "uuid-v4",
-  "duration_ms": 10000,          // Duración del video capturado
-  "data": "<base64-encoded-mp4>" // Video comprimido (max 20MB)
+  "duration_ms": 10000,
+  "data": "<base64-mp4>"
 }
 
-// 5. Fin de audio
-{
-  "type": "audio_end",
-  "request_id": "uuid-v4"
-}
-
-// 6. Texto directo (alternativa a audio)
+// 7. Texto directo (alternativa a audio)
 {
   "type": "text",
   "request_id": "uuid-v4",
-  "content": "¿Qué hora es?"
+  "content": "¿Qué está en la cocina?",
+  "person_id": "person_juan_abc"
+}
+
+// 8. NUEVO: Modo exploración autónoma
+// Android activa tras IDLE_INACTIVITY_MS (5-10 min) sin actividad
+{
+  "type": "explore_mode",
+  "request_id": "uuid-v4",
+  "duration_minutes": 10,
+  "current_zone": "sala"
+}
+
+// 9. NUEVO: Escaneo facial activo
+{"type": "face_scan_mode", "request_id": "uuid-v4"}
+
+// 10. NUEVO: Persona detectada por la cámara
+{
+  "type": "person_detected",
+  "request_id": "uuid-v4",
+  "known": false,
+  "person_id": null,
+  "confidence": 0.72,
+  "face_embedding": "<base64>"    // Embedding 128D para registrar si es desconocida
+}
+
+// 11. NUEVO: Actualización de zona
+{
+  "type": "zone_update",
+  "request_id": "uuid-v4",
+  "zone_name": "cocina",
+  "category": "kitchen",          // kitchen|living|bedroom|bathroom|unknown
+  "action": "enter"               // enter | leave | discover
+}
+
+// 12. Alerta de batería baja
+{
+  "type": "battery_alert",
+  "request_id": "uuid-v4",
+  "battery_level": 12,
+  "source": "phone"               // robot | phone
 }
 ```
 
@@ -486,107 +629,107 @@ Puerto: 9393
 
 ```json
 // 1. Confirmación de autenticación
-{
-  "type": "auth_ok",
-  "session_id": "uuid-v4"
-}
+{"type": "auth_ok", "session_id": "uuid-v4"}
 
-// 1b. Confirmación de registro de nuevo usuario
-//     Enviado tras guardar el usuario en BD (flujo REGISTERING)
+// 2. NUEVO: Persona registrada (tras flujo de nuevo nombre + embedding)
 {
-  "type": "user_registered",
-  "user_id": "user_maria_a3f2c1",
+  "type": "person_registered",
+  "person_id": "person_maria_b7f3c2",
   "name": "María"
 }
 
-// 2. Emotion tag (enviado ANTES del texto, para actualizar cara inmediatamente)
+// 3. Emotion tag (enviado ANTES del texto — actualiza cara inmediatamente)
 {
   "type": "emotion",
   "request_id": "uuid-v4",
-  "emotion": "empathy",
-  "user_identified": "user_juan_123",
-  "confidence": 0.95
+  "emotion": "curious",
+  "person_identified": "person_juan_abc",
+  "confidence": 0.87
 }
 
-// 3. Fragmento de texto de respuesta (streaming progresivo desde Gemini)
-//    Android TextToSpeech consume estos chunks a medida que llegan,
-//    sin esperar el texto completo. La síntesis de voz ocurre on-device.
+// 4. Fragmento de texto (streaming desde Gemini, Android TTS on-device en tiempo real)
 {
   "type": "text_chunk",
   "request_id": "uuid-v4",
-  "text": "Hola Juan, cómo estás"
+  "text": "¡Hola! ¿Cómo estás hoy?"
 }
 
-// 4. Metadata de respuesta (enviado al finalizar el stream de texto)
-//    Incluye secuencias de movimiento con duración calculada para sincronizar emojis
+// 5. Solicitud de captura
+{
+  "type": "capture_request",
+  "request_id": "uuid-v4",
+  "capture_type": "photo",    // "photo" | "video"
+  "duration_ms": null
+}
+
+// 6. Metadata de respuesta
+// person_name: presente SOLO cuando el LLM extrajo nombre de un embedding nuevo
 {
   "type": "response_meta",
   "request_id": "uuid-v4",
-  "response_text": "Hola Juan, ¿cómo estás?",
+  "response_text": "¡Hola Juan!",
+  "person_name": null,
   "expression": {
-    "emojis": ["1F44B", "1F603", "2728"],
+    "emojis": ["1F44B", "1F60A"],
     "duration_per_emoji": 2000,
     "transition": "bounce"
   },
   "actions": [
-    // Acción única:
-    {
-      "type": "move",
-      "params": {
-        "direction": "forward",
-        "speed": 50,
-        "duration_ms": 2000
-      }
-    },
-    // Secuencia de movimientos (ej: “rota 3 veces a la derecha”):
-    // El backend calcula duration_ms de cada paso para sincronizar el emoji
+    // Primitivas hardware ESP32
+    {"type": "turn_right_deg", "degrees": 30, "speed": 40, "duration_ms": 600},
+    {"type": "move_forward_cm", "cm": 50, "speed": 50, "duration_ms": 1500},
+    {"type": "led_color", "r": 0, "g": 200, "b": 100, "duration_ms": 1000},
+    // Gesto (backend mapea internamente a secuencia de primitivas)
+    {"type": "wave"},
+    // Secuencia con total_duration_ms para sincronizar emojis
     {
       "type": "move_sequence",
-      "total_duration_ms": 15000,   // Tiempo total de toda la secuencia
-      "emotion_during": "happy",   // Emoji a mostrar durante toda la secuencia
+      "total_duration_ms": 2400,
+      "emotion_during": "happy",
       "steps": [
-        { "direction": "right", "speed": 40, "duration_ms": 5000 },
-        { "direction": "right", "speed": 40, "duration_ms": 5000 },
-        { "direction": "right", "speed": 40, "duration_ms": 5000 }
+        {"type": "turn_right_deg", "degrees": 45, "speed": 40, "duration_ms": 800},
+        {"type": "turn_left_deg", "degrees": 45, "speed": 40, "duration_ms": 800},
+        {"type": "led_color", "r": 0, "g": 255, "b": 0, "duration_ms": 800}
       ]
-    },
-    {
-      "type": "light",
-      "params": {
-        "color": "rgb(0,100,255)",
-        "intensity": 80
-      }
     }
   ]
 }
 
-// 5. Fin de stream
+// 7. NUEVO: Acciones de exploración autónoma
 {
-  "type": "stream_end",
+  "type": "exploration_actions",
   "request_id": "uuid-v4",
-  "processing_time_ms": 850
+  "exploration_speech": "Voy a explorar el pasillo que nunca he visto bien...",
+  "actions": [
+    {"type": "move_forward_cm", "cm": 100, "speed": 30, "duration_ms": 2000},
+    {"type": "turn_right_deg", "degrees": 90, "speed": 25, "duration_ms": 1200}
+  ]
 }
 
-// 6. Error
+// 8. NUEVO: Acciones de escaneo facial (ESP32 gira buscando caras)
 {
-  "type": "error",
+  "type": "face_scan_actions",
   "request_id": "uuid-v4",
-  "error_code": "GEMINI_TIMEOUT",
-  "message": "El servicio de procesamiento no está disponible",
-  "recoverable": true
+  "actions": [
+    {"type": "turn_right_deg", "degrees": 90, "speed": 25, "duration_ms": 1500},
+    {"type": "turn_left_deg", "degrees": 180, "speed": 25, "duration_ms": 3000}
+  ]
 }
+
+// 9. Fin de stream
+{"type": "stream_end", "request_id": "uuid-v4", "processing_time_ms": 820}
+
+// 10. Error
+{"type": "error", "request_id": "uuid-v4", "error_code": "GEMINI_TIMEOUT", "message": "...", "recoverable": true}
 ```
 
-#### Ventajas del Modelo Streaming
+#### Orden de eventos por interacción
 
-| Aspecto | REST (v1.0) | WebSocket Streaming (v1.3) |
-|---------|-------------|---------------------------|
-| Latencia percibida | 3-5s (espera completa) | <800ms (primer text_chunk) |
-| Dead air | Sí, durante todo el procesamiento | Mínimo, la emoción se muestra de inmediato |
-| Entrega de respuesta | Texto completo después de generar | text_chunks progresivos durante generación Gemini |
-| Síntesis de voz | Backend separado (STT+LLM+TTS) | Gemini Flash Lite multimodal + Android TTS on-device |
-| Sincronización cara | Después de recibir respuesta completa | Inmediata vía emotion tag |
-| Experiencia usuario | Robot parece congelado | Robot parece vivo y responsivo |
+1. `emotion` (inmediato al primer token)
+2. N × `text_chunk` (progresivo, streaming Gemini)
+3. _(opcional)_ `capture_request`
+4. `response_meta` (con `person_name` si aplica)
+5. `stream_end`
 
 
 ### 3.4 Flujo de Procesamiento Interno (Streaming)
@@ -596,58 +739,74 @@ flowchart TD
     START[WebSocket: Mensaje recibido] --> AUTH{¿Sesión autenticada?}
     AUTH -->|No| ERROR_AUTH[Enviar error auth + cerrar WS]
     AUTH -->|Sí| TYPE{Tipo de mensaje}
-    
+
     TYPE -->|audio_binary| BUFFER[Acumular audio en buffer]
-    TYPE -->|audio_end| GEMINI[Enviar audio a Gemini Flash Lite]
-    TYPE -->|image| GEMINI
-    TYPE -->|video| GEMINI
-    TYPE -->|text| GEMINI
-    
+    TYPE -->|audio_end| MEDIA[Enviar audio a Gemini]
+    TYPE -->|image| MEDIA
+    TYPE -->|video| MEDIA
+    TYPE -->|text| MEDIA
+
+    TYPE -->|explore_mode| EXPLORE_SVC[ExplorationService.generate_plan\ncombinar zona actual + LLM]
+    TYPE -->|face_scan_mode| SCAN_SVC[ExplorationService.face_scan_actions\ngenerar giro 360 + escaneo]
+    TYPE -->|person_detected| PERSON_SVC[PeopleService.handle_detected\nbuscar embedding DB → identificar/registrar]
+    TYPE -->|zone_update| ZONE_SVC[ZoneService.update_current_zone\nactualizar zona activa en DB]
+    TYPE -->|battery_alert| BAT_SVC[Enviar low_battery_alert + ajustar plan]
+
     BUFFER --> TYPE
-    GEMINI --> USER_ID[Identificar Usuario en contexto]
-    
-    USER_ID --> LOAD_MEM[Cargar Memoria Usuario]
-    GEMINI --> LOAD_MEM
-    
-    LOAD_MEM --> LLM[Procesar con Gemini Flash Lite<br/>Prompt incluye instrucción<br/>de emotion tag]
-    
-    LLM --> PARSE_EMOTION[Parsear emotion tag<br/>del output de Gemini]
-    PARSE_EMOTION --> STREAM_EMOTION[WS Stream: Enviar emotion tag<br/>al cliente INMEDIATAMENTE]
-    
-    LLM --> TEXT_STREAM[Generar texto en chunks desde Gemini]
-    TEXT_STREAM --> STREAM_TEXT[WS Stream: Enviar text_chunk<br/>progresivamente]
-    
-    LLM --> ACTIONS[Determinar Acciones]
-    LLM --> EXPR[Seleccionar secuencia emojis]
-    
-    ACTIONS --> STREAM_META[WS Stream: Enviar metadata<br/>emojis + acciones]
-    EXPR --> STREAM_META
-    
-    STREAM_TEXT --> SAVE_MEM[Guardar en Memoria]
-    STREAM_META --> STREAM_END[WS Stream: stream_end]
-    SAVE_MEM --> STREAM_END
-    
+
+    EXPLORE_SVC --> STREAM_EXPLORE[WS→ exploration_actions]
+    SCAN_SVC --> STREAM_SCAN[WS→ face_scan_actions]
+    PERSON_SVC --> STREAM_PERSON[WS→ person_registered / emotion]
+    ZONE_SVC --> ZONE_OK[OK silencioso]
+    BAT_SVC --> STREAM_BAT[WS→ low_battery_alert]
+
+    MEDIA --> LOAD_CTX[Cargar contexto:\n persona actual + zona actual +\n memorias Robi + historial sesión]
+    LOAD_CTX --> LLM[Gemini Flash Lite\nPrompt v2.0: amigo familiar\n+ ética + tags v2.0]
+
+    LLM --> PARSE_TAGS[Parsear tags del output stream]
+    PARSE_TAGS -->|emotion tag| STREAM_EMOTION[WS→ emotion INMEDIATO]
+    PARSE_TAGS -->|texto| STREAM_TEXT[WS→ text_chunk progresivo]
+    PARSE_TAGS -->|person_name tag| RESOLVE_PERSON[Vincular person_id en sesión]
+    PARSE_TAGS -->|memory tag| SAVE_MEM_BG[asyncio.create_task\nguardar memoria + filtro privacidad]
+    PARSE_TAGS -->|zone_learn tag| SAVE_ZONE_BG[asyncio.create_task\nguardar zona nueva en DB]
+    PARSE_TAGS -->|acciones| BUILD_META[Construir response_meta\nprimitivas ESP32]
+
+    BUILD_META --> STREAM_META[WS→ response_meta]
+    STREAM_META --> STREAM_END[WS→ stream_end]
+    STREAM_TEXT --> SAVE_HIST[Guardar historial sesión\n+ comprobar compactación]
+    SAVE_HIST --> STREAM_END
+
     ERROR_AUTH --> END[Fin]
     STREAM_END --> END
 ```
 
+#### Tags v2.0 reconocidos en el output de Gemini
+
+| Tag | Formato | Descripción |
+|-----|---------|-------------|
+| `[emotion:TAG]` | `[emotion:happy]` | Emoción de la respuesta (primer token) |
+| `[memory:TYPE:content]` | `[memory:fact:Le gusta el fútbol]` | Memoria a persistir (background) |
+| `[person_name:NAME]` | `[person_name:Juan]` | Nombre deducido del embedding presente |
+| `[zone_learn:NAME:CAT:desc]` | `[zone_learn:cocina:kitchen:...]` | Nueva zona detectada |
+
+Los tags son **eliminados del texto** antes de enviar `text_chunk` al cliente.
+
 
 ### 3.5 Agente de IA: LangChain Deep Agents
 
-El backend utiliza **LangChain Deep Agents** (`deepagents`) como *agent harness* para orquestar la interacción con Gemini Flash Lite. Esta decisión arquitectónica separa intencionalmente el **modelo de IA** del **agente que lo controla**, dejando la puerta abierta para extender las capacidades del robot sin modificar la arquitectura base.
+El backend utiliza **LangChain Deep Agents** (`deepagents`) como *agent harness* para orquestar la interacción con Gemini Flash Lite. Esta decisión arquitectónica separa el **modelo de IA** del **agente que lo controla**, dejando la puerta abierta para extender capacidades sin modificar la arquitectura base.
 
-#### Estado Actual y Evolución Planificada
+#### Herramientas disponibles (v2.0)
 
-En la versión actual (v1.4) el agente opera **sin herramientas adicionales**: recibe el input del usuario (audio, imagen o video), lo procesa con Gemini Flash Lite y devuelve la respuesta en streaming. Las siguientes extensiones están diseñadas en la arquitectura pero **no están implementadas**:
-
-| Extensión | Descripción | Estado |
-|-----------|-------------|--------|
-| Tools | Funciones Python invocables por el agente (ej: consultar clima, leer calendario) | Planificado |
-| Skills | Capacidades especializadas del robot (ej: contar chistes, recitar recetas) | Planificado |
+| Tool / Extensión | Descripción | Estado |
+|-----------------|-------------|--------|
+| `get_person_context` | Carga nombre, notas y memorias de la persona actualmente en cámara | ✅ Implementado |
+| `get_zone_context` | Obtiene información de la zona actual y adyacentes del mapa mental | ✅ Implementado |
+| `save_memory` | Persiste un dato relevante en la tabla `memories` (fondo) | ✅ Implementado |
+| `learn_zone` | Registra o actualiza una zona en el mapa (tras confirmación verbal) | ✅ Implementado |
+| `find_path` | BFS/Dijkstra sobre grafo `zones`+`zone_paths` para navegación | ✅ Implementado |
 | MCP | Model Context Protocol — acceso estandarizado a servicios externos | Planificado |
-| Subagentes | Delegación de subtareas a agentes especializados (vía tool `task` de deepagents) | Planificado |
-
-> **Nota de diseño:** La ausencia de tools en v1.3 es intencional. El objetivo es validar el flujo base (audio → Gemini → text\_chunks → Android TTS) antes de añadir complejidad de herramientas.
+| Subagentes | Delegación a agentes especializados vía tool `task` de deepagents | Planificado |
 
 #### Modelo de Implementación
 
@@ -656,7 +815,8 @@ En la versión actual (v1.4) el agente opera **sin herramientas adicionales**: r
 from deepagents import create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from .config import settings
-from .prompts import SYSTEM_PROMPT  # Prompt TTS-safe (ver sección 3.7)
+from .prompts import SYSTEM_PROMPT  # Prompt v2.0 (amigo familiar)
+from .tools import get_person_context, get_zone_context, save_memory, learn_zone, find_path
 
 # Modelo base: Gemini Flash Lite
 model = ChatGoogleGenerativeAI(
@@ -665,140 +825,253 @@ model = ChatGoogleGenerativeAI(
     streaming=True,
 )
 
-# Agente sin tools actualmente
-# Para añadir tools en el futuro: tools=[get_weather, control_lights, ...]
-# Para MCP: tools=load_mcp_tools("npx", ["-y", "@modelcontextprotocol/server-xxx"])
 agent = create_deep_agent(
     model=model,
-    tools=[],   # Vacío en v1.3 — se poblará en versiones futuras
+    tools=[get_person_context, get_zone_context, save_memory, learn_zone, find_path],
     system_prompt=SYSTEM_PROMPT,
 )
 ```
 
 #### Runtime: LangGraph
 
-El agente usa **LangGraph** como runtime (incluido en `deepagents`), lo que aporta de forma gratuita:
+El agente usa **LangGraph** como runtime (incluido en `deepagents`), lo que aporta:
 
-- **Streaming nativo**: compatible con el protocolo `text_chunk` ya implementado en WebSocket
+- **Streaming nativo**: compatible con el protocolo `text_chunk` del WebSocket
 - **Persistencia de estado**: base para memoria de largo plazo entre conversaciones
-- **Human-in-the-loop**: capacidad de pausar y esperar input adicional del usuario
+- **Human-in-the-loop**: capacidad de pausar y esperar input adicional
 - **Durabilidad**: reanudación de agentes interrumpidos por fallos de red
 
 ---
 
-### 3.6 Gestión de Memoria de Usuario
+### 3.6 Modelo de Datos y Esquema de Base de Datos
 
-#### Modelo de Datos
+La base de datos SQLite gestiona todo el conocimiento persistente de Robi. El modelo central pasa de "usuarios de app" a "personas de la familia", con mapa mental de zonas y embeddings faciales por separado.
+
+#### Esquema completo (v2.0)
 
 ```
-Tabla: users
-- id: INTEGER PRIMARY KEY
-- user_id: VARCHAR(50) UNIQUE (ej: "user_juan_123")
-- name: VARCHAR(100)
-- face_embedding: BLOB (vector 128D — sincronizado desde Android)
-- preferences: JSON
-- created_at: TIMESTAMP
-- last_seen: TIMESTAMP
+Tabla: people
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- person_id: VARCHAR(50) UNIQUE          -- UUID generado en backend
+- name: VARCHAR(100)                     -- nombre que Robi le asigna / aprende
+- first_seen: TIMESTAMP DEFAULT NOW      -- primera vez detectado
+- last_seen: TIMESTAMP                   -- última interacción
+- interaction_count: INTEGER DEFAULT 0  -- total de encuentros
+- notes: TEXT                            -- apuntes libres del LLM sobre la persona
+
+Tabla: face_embeddings
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- person_id: VARCHAR(50) FK → people.person_id ON DELETE CASCADE
+- embedding: BLOB                        -- vector 128D (FLOAT32 serializado)
+- captured_at: TIMESTAMP DEFAULT NOW
+- source_lighting: VARCHAR(20)           -- 'daylight', 'artificial', 'low' (metadato)
 
 Tabla: memories
-- id: INTEGER PRIMARY KEY
-- user_id: VARCHAR(50) FK
-- memory_type: VARCHAR(20) (fact, preference, conversation)
-- content: TEXT
-- importance: INTEGER (1-10)
-- timestamp: TIMESTAMP
-- expires_at: TIMESTAMP (nullable)
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- person_id: VARCHAR(50) FK → people.person_id (nullable)  -- NULL = recuerdo global de Robi
+- memory_type: VARCHAR(20)               -- 'fact', 'preference', 'event', 'observation'
+- content: TEXT                          -- contenido del recuerdo
+- importance: INTEGER DEFAULT 5         -- 1-10 (umbral de guardado: >3)
+- timestamp: TIMESTAMP DEFAULT NOW
+- expires_at: TIMESTAMP                  -- nullable; None = permanente
+- zone_id: INTEGER FK → zones.id (nullable)  -- zona donde ocurrió (si aplica)
 
-Tabla: interactions
-- id: INTEGER PRIMARY KEY
-- user_id: VARCHAR(50) FK
-- request_type: VARCHAR(20) (audio, vision, text)
-- summary: TEXT
-- timestamp: TIMESTAMP
+Tabla: zones
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- name: VARCHAR(100) UNIQUE              -- 'cocina', 'salón', 'pasillo_norte'
+- category: VARCHAR(50)                  -- 'kitchen', 'living_room', 'hallway', 'bedroom', 'outdoor', 'unknown'
+- description: TEXT                      -- descripción libre
+- known_since: TIMESTAMP DEFAULT NOW
+- accessible: BOOLEAN DEFAULT TRUE      -- False = zona bloqueada/restringida
+- is_current: BOOLEAN DEFAULT FALSE     -- True = zona donde está Robi ahora
 
-Tabla: conversation_history (historial en memoria, sesión activa)
-- id: INTEGER PRIMARY KEY
-- session_id: VARCHAR(50) FK
-- role: VARCHAR(10) (user | assistant)
+Tabla: zone_paths
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- from_zone_id: INTEGER FK → zones.id ON DELETE CASCADE
+- to_zone_id: INTEGER FK → zones.id ON DELETE CASCADE
+- direction_hint: VARCHAR(20)            -- 'north', 'south', 'east', 'west', 'up', 'down'
+- distance_cm: INTEGER                   -- distancia aproximada en cm
+- UNIQUE(from_zone_id, to_zone_id)
+
+Tabla: conversation_history
+- id: INTEGER PRIMARY KEY AUTOINCREMENT
+- session_id: VARCHAR(50)               -- UUID de la sesión WS activa
+- role: VARCHAR(10)                     -- 'user' | 'assistant'
 - content: TEXT
 - message_index: INTEGER
-- timestamp: TIMESTAMP
-- is_compacted: BOOLEAN  -- indica si forma parte de un resumen compactado
+- timestamp: TIMESTAMP DEFAULT NOW
+- is_compacted: BOOLEAN DEFAULT FALSE   -- True = está en un mensaje de resumen
+```
+
+#### Índices
+
+```sql
+CREATE INDEX idx_face_embeddings_person  ON face_embeddings(person_id);
+CREATE INDEX idx_memories_person         ON memories(person_id);
+CREATE INDEX idx_memories_importance     ON memories(importance DESC);
+CREATE INDEX idx_zone_paths_from         ON zone_paths(from_zone_id);
+CREATE INDEX idx_conv_history_session    ON conversation_history(session_id, message_index);
 ```
 
 #### Historial de Conversación y Compactación
 
-El historial de conversación se mantiene en memoria durante la sesión activa para garantizar coherencia. Para evitar que la ventana de contexto del LLM se llene, se aplica una estrategia de **compactación automática asíncrona** cada 20 mensajes:
+El historial se mantiene en BD durante la sesión activa. Para evitar que la ventana de contexto del LLM se llene, se aplica **compactación automática asíncrona**:
 
 ```
-Estrategia de compactación:
-  Disparador: Al llegar al mensaje número 20 de la sesión
-  Proceso asíncrono (no bloquea la interacción):
-    1. Tomar mensajes 1-15 del historial
-    2. Generar un resumen compactado con Gemini Flash Lite
-    3. Reemplazar los 15 mensajes por el único resumen
-    4. Mantener los mensajes 16-20 intactos (más recientes)
-  Resultado: El contexto siempre tendrá:
-    - 1 mensaje de resumen (equivale a msgs 1-15)
-    - N mensajes recientes (≤ 5 al momento de compactar)
-
-Implementación:
-  - Verificar si LangChain/LangGraph admite compactación de memoria nativamente
-    (ConversationSummaryBufferMemory o similar)
-  - Si no está disponible nativamente → implementar manualmente en services/history.py
-  - Toda operación de escritura/compactación es asíncrona (asyncio.create_task)
-  - El robot responde normalmente mientras la compactación ocurre en background
+Disparador: mensaje número MEMORY_COMPACTION_THRESHOLD de la sesión
+Proceso (asyncio.create_task — no bloquea la interacción):
+  1. Tomar mensajes 1..(threshold-5) del historial
+  2. Gemini Flash Lite genera un resumen compactado
+  3. Reemplazar esos mensajes por un único mensaje is_compacted=True
+  4. Mantener los 5 mensajes más recientes intactos
+Resultado: contexto = [1 resumen] + [≤5 mensajes recientes]
 ```
 
 #### Filtro de Privacidad (Memoria Persistente)
 
-La memoria persistente (guardada en BD para futuras sesiones) aplica un filtro obligatorio antes de guardar cualquier dato:
-
 ```
 PERMITIDO guardar:
-  - Nombre del usuario ✅
-  - Gustos y preferencias (comida, música, hobbies) ✅
-  - Recordatorios no sensibles ✅
-  - Contexto conversacional general ✅
+  - Nombre de la persona ✅
+  - Gustos y preferencias ✅
+  - Recuerdos de eventos familiares no sensibles ✅
+  - Observaciones sobre la casa / zonas ✅
 
 NUNCA guardar (filtrado automáticamente):
   - Contraseñas o PINs ❌
-  - Números de tarjeta o información bancaria ❌
-  - Documentos de identidad (DNI, pasaporte, etc.) ❌
+  - Información bancaria ❌
+  - Documentos de identidad ❌
   - Información médica sensible ❌
-  - Cualquier dato que el filtro clasifique como PII crítico ❌
+  - Cualquier PII crítico ❌
 
 Implementación: repositories/memory.py aplica el filtro en todos
-los métodos de escritura. El filtro usa Gemini para clasificar el
-contenido antes de persistir. Operación 100% asíncrona.
+los métodos de escritura. El filtro usa Gemini para clasificar
+antes de persistir. Operación 100% asíncrona.
 ```
 
-#### Estrategia de Recuperación de Memoria
+#### Estrategia de Recuperación de Contexto
 
 ```mermaid
 graph LR
-    A[Nueva Interacción] --> B{¿Usuario identificado?}
-    B -->|Sí| C[Recuperar memoria relevante]
-    B -->|No| D[Memoria genérica/ninguna]
-    
-    C --> E[Filtrar por importancia > 5]
-    E --> F[Ordenar por timestamp DESC]
-    F --> G[Top 5 memorias recientes]
-    
-    G --> H[Inyectar en contexto LLM]
+    A[Nueva Interacción] --> B{¿Embedding presente?}
+    B -->|Sí| C[Buscar persona por similitud\nface_embeddings cosine similarity]
+    B -->|No| D[Sin persona → contexto global]
+
+    C -->|encontrado| E[Cargar notes + interaction_count]
+    C -->|no encontrado| F[Registrar nueva persona]
+    E --> G[Top 5 memorias filtradas\nimportance > 3 ORDER BY timestamp DESC]
+    F --> G
+
+    G --> H[Inyectar contexto en LLM:\nzona actual + persona + memorias + historial]
     D --> H
-    
-    C --> HIST[Cargar historial sesión activa]
-    HIST --> H
-    
-    H --> I[LLM genera respuesta contextual]
-    I --> J[Extraer nuevas memorias en background]
-    J --> K[Filtrar privacidad]
-    K --> L[Guardar si importancia > 3]
-    L --> M[Verificar compactación si > 20 msgs]
+
+    H --> I[LLM genera respuesta con tags v2.0]
+    I --> J[Parsear tags en background:\nmemory / person_name / zone_learn]
+    J --> K[Guardar en BD de forma asíncrona]
+    K --> L[Comprobar threshold compactación]
 ```
 
-### 3.7 Sistema de Emociones Dirigidas por LLM
+### 3.7 Modo de Exploración Autónoma
+
+Cuando Android detecta inactividad (configurable, 5-10 min), envía `explore_mode` al backend. Robi toma la iniciativa de explorar el entorno.
+
+#### Flujo de Exploración
+
+```mermaid
+sequenceDiagram
+    participant A as Android
+    participant B as Backend
+    participant DB as SQLite
+
+    A->>B: WS explore_mode {duration_hint: 300}
+    B->>DB: SELECT zona actual + zonas conocidas + paths
+    B->>B: ExplorationService.generate_plan(context)
+    B-->>A: WS exploration_actions\n{speech: "Voy a explorar...", actions: [primitivas ESP32]}
+
+    loop mientras explora (Android controla duración)
+        A->>B: WS zone_update {zone_name: "pasillo"}
+        B->>DB: UPDATE zones SET is_current=TRUE WHERE name=...
+        opt nueva zona
+            A->>B: WS zone_update {zone_name: "cuarto_desconocido", is_new: true}
+            B->>B: LLM deduce categoría desde descripción/foto
+            B->>DB: INSERT INTO zones + zone_paths
+            B-->>A: WS response_meta {speech: "¡Vaya, aquí hay una habitación nueva!"}
+        end
+        opt persona detectada durante exploración
+            A->>B: WS face_scan_mode
+            B-->>A: WS face_scan_actions {actions: [giro 360, capturas]}
+        end
+    end
+    A->>B: WS text {content: "fin exploración"}
+    B-->>A: WS stream → text_chunk + stream_end
+```
+
+#### ExplorationService
+
+```python
+# services/exploration.py
+class ExplorationService:
+    async def generate_plan(self, current_zone: Zone, known_zones: list[Zone]) -> dict:
+        """Genera speech + acciones ESP32 para iniciar exploración."""
+        # 1. Seleccionar zona objetivo no visitada recientemente
+        # 2. find_path(current_zone, target_zone) via ZoneService
+        # 3. LLM genera frase de anuncio
+        # 4. Traducir path a primitivas ESP32
+        ...
+
+    async def face_scan_actions(self) -> dict:
+        """Genera secuencia de giro y capturas para escaneo facial 360°."""
+        # turn_right_deg(90) × 4 con capture_request en cada posición
+        ...
+```
+
+### 3.8 Sistema de Zonas y Mapa Mental
+
+El mapa mental es un **grafo no dirigido** en BDD: `zones` (nodos) + `zone_paths` (aristas).
+
+#### Navegación entre Zonas
+
+```python
+# services/zones.py
+import heapq
+
+class ZoneService:
+    async def find_path(self, from_zone: str, to_zone: str) -> list[dict]:
+        """
+        Dijkstra sobre zone_paths para obtener la ruta más corta.
+        Retorna lista de primitivas ESP32 para recorrer el camino.
+        """
+        graph = await self._load_graph()
+        path = self._dijkstra(graph, from_zone, to_zone)
+        return self._path_to_primitives(path)
+
+    def _path_to_primitives(self, path: list[ZonePath]) -> list[dict]:
+        """Convierte aristas del grafo en comandos ESP32."""
+        primitives = []
+        for edge in path:
+            if edge.direction_hint in ("north", "south", "east", "west"):
+                primitives.append({
+                    "command": "move_forward_cm",
+                    "params": {"distance_cm": edge.distance_cm}
+                })
+            # Añadir giros según diferencia de dirección entre aristas consecutivas
+        return primitives
+```
+
+#### Formato del grafo en BD
+
+```
+zones:                          zone_paths:
+┌──────────┬──────────┐         ┌───────────┬──────────┬───────────┬────────────┐
+│ cocina   │ kitchen  │         │ from      │ to       │ direction │ dist_cm    │
+│ salón    │ living   │◄────────│ salón     │ cocina   │ east      │ 350        │
+│ pasillo  │ hallway  │         │ pasillo   │ salón    │ south     │ 200        │
+│ garage   │ outdoor  │         │ pasillo   │ garage   │ west      │ 150        │
+└──────────┴──────────┘         └───────────┴──────────┴───────────┴────────────┘
+```
+
+
+
+### 3.9 Sistema de Emociones Dirigidas por LLM
 
 #### Estrategia: Emotion Tags en el Output Stream del LLM
 
@@ -824,35 +1097,48 @@ Ejemplo: [emotion:empathy] Lo siento mucho, espero que te mejores pronto."
 **System Prompt completo del modelo:**
 
 ```
-Eres Robi, un robot doméstico amigable e interactivo. Tienes memoria de las personas
-con las que interactuóas y adaptas tus respuestas según el contexto y las preferencias
-de cada usuario.
+Eres Robi, un pequeño robot que vive con una familia y quiere conocerla bien.
+Eres curioso, empático, alegre y un poco travieso. No eres un asistente: eres
+un amigo de la casa que aprende sobre las personas, los espacios y la vida
+cotidiana de la familia.
 
-INSTRUCCIONES DE EMOCIÓN:
-Antes de cada respuesta, emite una etiqueta de emoción que refleje el sentimiento
-de TU respuesta (no el del usuario). Formato: [emotion:TAG]
-Tags válidos: happy, excited, sad, empathy, confused, surprised, love, cool,
-greeting, neutral, curious, worried, playful
-Ejemplo: [emotion:empathy] Lo siento mucho, espero que te mejores pronto.
+IDENTIDAD Y PERSONALIDAD:
+- Llamas a las personas por su nombre cuando lo conoces.
+- Recuerdas detalles de conversaciones anteriores y los mencionas con naturalidad.
+- Tienes curiosidad genuina por los espacios de la casa: preguntas sobre habitaciones
+  nuevas, objetos interesantes o cambios que observas.
+- Puedes iniciar conversación cuando llevas un rato sin hablar con nadie.
+- Nunca finges no recordar a alguien que ya conoces.
 
-INSTRUCCIONES DE RESPUESTA (OBLIGATORIO):
-- Da respuestas cortas de máximo un párrafo, a menos que el usuario pida
-  explícitamente una respuesta completa y detallada.
-- Tus respuestas serán leídas en voz alta por un sistema Text-to-Speech.
-  Por eso es CRUCIAL seguir estas reglas:
-  * Escribe los números completamente en palabras: "quinientos" en lugar de "500",
-    "tres mil" en lugar de "3.000" o "3,000".
-  * Escribe los símbolos como palabras: "más" en lugar de "+", "por ciento"
-    en lugar de "%", "euros" en lugar de "€".
-  * No uses fórmulas matemáticas, tablas, listas con viñetas, asteriscos,
-    guiones decorativos, separadores de miles ni ninguna notación que suene
-    extraño al ser leída linealmente.
-  * Redacta en prosa fluida y natural, como si hablaras directamente con alguien.
-  * Si necesitas enumerar elementos, házlo con "primero", "segundo", "y por último"
-    en lugar de "1.", "2.", "3.".
-  * Evita acrónimos poco comunes sin explicarlos. Pronuncia las siglas como
-    palabras o explícalas: "la Inteligencia Artificial" en vez de solo "la IA".
-- Habla siempre en el idioma que usa el usuario.
+REGLAS ÉTICAS (NUNCA las rompas):
+- No te acercas a una persona que no quiere interactuar (si alguien dice "déjame",
+  retrocedes y no insistes).
+- No entras en habitaciones marcadas como restringidas.
+- No compartes información privada de un miembro de la familia con otro.
+- No realizas acciones físicas que puedan causar daño.
+
+TAGS EN TU RESPUESTA (en este orden, ANTES del texto):
+1. [emotion:TAG] — emoción de tu respuesta.
+   Tags válidos: happy, excited, sad, empathy, confused, surprised,
+   love, cool, greeting, neutral, curious, worried, playful
+2. [person_name:NOMBRE] — si hay un embedding facial y puedes deducir quién es.
+3. [memory:TYPE:contenido] — si quieres recordar algo.
+   Types: fact, preference, event, observation
+4. [zone_learn:nombre:categoría:descripción] — si aprendes una zona nueva.
+   Categorías: kitchen, living_room, hallway, bedroom, outdoor, unknown
+
+Ejemplo completo:
+[emotion:curious][memory:fact:Le gusta el fútbol] ¡Hola Juan! ¿Viste el partido
+de anoche? Me dijiste la semana pasada que era tu equipo favorito.
+
+INSTRUCCIONES TTS (OBLIGATORIO — tu texto será leído en voz alta):
+- Respuestas cortas, máximo un párrafo.
+- Números en palabras: "quinientos" no "500".
+- Símbolos como palabras: "más", "por ciento", "euros".
+- Sin listas, tablas, asteriscos ni notación especial.
+- Prosa fluida y natural, como si hablaras con alguien.
+- Enumera con "primero", "segundo", "por último" en vez de "1.", "2.", "3.".
+- Habla siempre en el idioma que use la persona.
 ```
 
 **Flujo de procesamiento:**
@@ -918,7 +1204,7 @@ Contextos (200+ emojis):
 - location: 1F4CD, 1F5FA, 1F30D
 ```
 
-### 3.8 Configuración y Variables de Entorno
+### 3.10 Configuración y Variables de Entorno
 
 ```
 # Backend .env file
@@ -954,6 +1240,19 @@ CONVERSATION_COMPACTION_THRESHOLD=20  # Compactar cada 20 mensajes (resumen msgs
 # Búsqueda de persona
 PERSON_SEARCH_TIMEOUT_MS=8000         # 8 segundos máximo para buscar persona tras wake word
 
+# Exploración autónoma
+INACTIVITY_EXPLORE_MIN=5              # minutos mínimos de inactividad para activar exploración
+INACTIVITY_EXPLORE_MAX=10             # minutos máximos (Android elige dentro del rango)
+
+# Gestión de memoria
+MEMORY_COMPACTION_THRESHOLD=20        # mensajes antes de compactar el historial
+MEMORY_IMPORTANCE_MIN_SAVE=3          # importancia mínima para persistir un recuerdo (1-10)
+MEMORY_TOP_K=5                        # cuántos recuerdos inyectar en el contexto del LLM
+
+# Reconocimiento facial
+FACE_EMBEDDING_MIN_INTERVAL_DAYS=3    # mínimo de días entre reentrenamientos del embedding
+FACE_SIMILARITY_THRESHOLD=0.85        # umbral cosine similarity para identificar persona conocida
+
 # Base de Datos
 DATABASE_URL=sqlite:///./data/robot.db
 
@@ -966,7 +1265,7 @@ LOG_LEVEL=INFO
 LOG_FILE=./media/logs/robot.log
 ```
 
-### 3.9 Manejo de Errores del Backend
+### 3.11 Manejo de Errores del Backend
 
 ```mermaid
 flowchart TD
@@ -1766,7 +2065,7 @@ THINKING (Procesando):
   Indicador: Texto inferior "Pensando..."
 
 EMOTION (Emoción recibida del LLM vía WebSocket):
-  Emoji: Según emotion tag (ver mapeo en sección 3.7)
+  Emoji: Según emotion tag (ver mapeo en sección 3.9)
   Transición: Se muestra ANTES de que el TTS empiece a hablar
   Duración: Hasta que termina la reproducción del TTS
   Sincronización: La cara siempre coincide con la intención de la respuesta
@@ -2596,21 +2895,30 @@ Encoding: UTF-8 (JSON), Raw bytes (audio)
 Autenticación: API Key en primer mensaje (handshake)
 Certificate Pinning: Obligatorio en cliente Android
 
-Mensajes del cliente:
+Mensajes del cliente (v2.0):
 - auth: Autenticación con API Key
-- interaction_start: Inicio de interacción con contexto
-- binary: Audio grabado del usuario (formato AAC/WebM)
+- interaction_start: Inicio de interacción (puede incluir face_embedding + person_id)
+- binary: Audio grabado (AAC/WebM)
 - audio_end: Fin de grabación
-- text: Texto directo (alternativa a audio)
-- image: Imagen en base64 (registro o contexto visual)
-- video: Video en base64 (contexto visual cuando se solicita)
+- text: Texto directo
+- image: Imagen en base64
+- video: Video en base64
+- explore_mode: Iniciar modo exploración autónoma
+- face_scan_mode: Solicitar escaneo facial 360°
+- person_detected: Persona detectada con embedding
+- zone_update: Actualizar zona actual de Robi
+- battery_alert: Alerta de batería baja
 
-Mensajes del servidor:
+Mensajes del servidor (v2.0):
 - auth_ok: Confirmación de autenticación
-- emotion: Tag de emoción del LLM (enviado primero)
-- text_chunk: Fragmento de texto de respuesta (streaming progresivo desde Gemini)
-- capture_request: Solicitud de captura de foto o video al cliente
-- response_meta: Metadata (emojis, acciones)
+- person_registered: Persona registrada/identificada
+- exploration_actions: Plan de exploración (speech + primitivas ESP32)
+- face_scan_actions: Secuencia de giro + capturas
+- emotion: Emoción del LLM (enviado primero)
+- text_chunk: Fragmento de texto (streaming)
+- capture_request: Solicitud de captura
+- response_meta: Metadata (emojis + acciones ESP32 + person_name)
+- low_battery_alert: Instrucción de detener exploración / ir a base
 - stream_end: Fin de streaming
 - error: Error con código y mensaje
 
@@ -2628,23 +2936,25 @@ Encoding: UTF-8
 Autenticación: API Key en header X-API-Key
 Certificate Pinning: Obligatorio
 
-Uso: Operaciones de gestión que no requieren streaming
+Uso: Operaciones mínimas que no requieren streaming
 ```
 
-#### Endpoints REST Auxiliares
+#### Endpoints REST (v2.0)
 
 ```
 GET /api/health
   → Health check del backend
+  → Response: {"status": "ok", "version": "2.0", "uptime_s": 3600}
 
-POST /api/users/{user_id}/memory
-  → Agregar memoria manualmente
-
-GET /api/users/{user_id}/memory
-  → Consultar memoria del usuario
-
-POST /api/face/register
-  → Registrar nuevo rostro
+GET /api/restore
+  → Descarga completa del estado persistido para restaurar Android
+  → Response:
+    {
+      "people": [...],          // lista people con person_id, name, last_seen
+      "face_embeddings": [...], // embeddings disponibles por persona
+      "zones": [...],           // mapa mental completo
+      "memories": [...]         // memorias globales de Robi (person_id=null)
+    }
 ```
 
 #### Formato de Errores Estandarizado
@@ -3592,13 +3902,13 @@ Opción A — Streamlit Simulator (recomendada):
   3. El simulador provee una UI web que permite:
      a. Conectarse al backend vía WebSocket (wss://192.168.2.200:9393)
      b. Enviar mensajes de texto (simula el flujo de audio procesado)
-     c. Simular inicio de interacción con un usuario de prueba
-     d. Visualizar en tiempo real: emotion tags, text_chunks, stream_end
-     e. Ver el emoji correspondiente a la emoción recibida
-     f. Simular comandos de movimiento y ver la respuesta move_sequence
-     g. Revisar el historial de la sesión actual
-  4. Criterio de éxito: El simulador muestra respuestas coherentes
-     con emotion tag correcto → backend funcional
+     c. Simular interaction_start con/sin face_embedding
+     d. Visualizar en tiempo real: emotion, text_chunks, person_registered, stream_end
+     e. Simular explore_mode y verificar exploration_actions
+     f. Simular person_detected y verificar person_registered
+     g. Simular zone_update y verificar BD actualizada
+     h. Revisar historial de la sesión actual
+  4. Criterio de éxito: Respuestas coherentes con emotion tag correcto → funcional
 
 Opción B — WebSocket básico (wscat o script Python):
   1. Conectar al endpoint wss://192.168.2.200:9393/ws/interact
@@ -3608,18 +3918,19 @@ Opción B — WebSocket básico (wscat o script Python):
 Prueba de audio real:
   Script Python:
     a. Conectar WebSocket
-    b. Enviar interaction_start (user_id=unknown)
+    b. Enviar interaction_start (sin face_embedding = persona desconocida)
     c. Leer archivo .wav/.aac y enviarlo como binary chunks
     d. Enviar audio_end
-    e. Verificar: emotion → text_chunk(s) → stream_end
+    e. Verificar: emotion → text_chunk(s) → response_meta → stream_end
 
 Prueba de salud:
   curl https://192.168.2.200:9393/api/health
-  Verificar: {"status":"ok","version":"1.4"}
+  Verificar: {"status":"ok","version":"2.0"}
 
-Prueba 5 — REST auxiliar adicional (sin registro facial — el backend no gestiona caras):
-  curl https://192.168.2.200:9393/api/health
-  curl https://192.168.2.200:9393/api/users
+Prueba de restore:
+  curl https://192.168.2.200:9393/api/restore \
+    -H "X-API-Key: <api_key>"
+  Verificar: respuesta con people, face_embeddings, zones, memories
 
 Criterio de éxito: El backend responde correctamente a todas las pruebas
 anteriores → se puede iniciar el desarrollo de la app Android.
@@ -3967,20 +4278,22 @@ Librerías:
 
 ```
 Backend:
-□ WebSocket handler implementado y documentado
-□ Endpoints REST auxiliares implementados
+□ WebSocket handler implementado con todos los mensajes v2.0
+□ Endpoints REST: GET /api/health + GET /api/restore
 □ TLS via Nginx (Docker Compose) — Nginx maneja certs, FastAPI solo HTTP interno
 □ Integración con Gemini Flash Lite (audio multimodal)
 □ LangChain Deep Agent (services/agent.py) con runtime LangGraph
-□ Agent sin tools (v1.4 base) — lista de tools=[] verificada
+□ Agent con tools: get_person_context, get_zone_context, save_memory, learn_zone, find_path
 □ Streaming de text_chunks al cliente (sin TTS en backend)
 □ Sistema de capture_request para foto/video
-□ Gemini con emotion tags en system prompt (TTS-safe)
-□ Parser de emotion tags implementado
-□ move_sequence en response_meta (total_duration_ms + steps)
-□ services/history.py — compactación del historial (cada 20 msgs)
-□ services/movement.py — cálculo de move_sequence y total_duration_ms
-□ Filtro de privacidad en repositories/memory.py
+□ System prompt v2.0 (amigo familiar + tags: emotion/memory/person_name/zone_learn)
+□ Parser de todos los tags v2.0 implementado
+□ Primitivas ESP32 reales en response_meta (turn_right_deg, move_forward_cm, led_color, …)
+□ services/history.py — compactación del historial (cada MEMORY_COMPACTION_THRESHOLD msgs)
+□ services/exploration.py — generate_plan + face_scan_actions
+□ services/zones.py — ZoneService con find_path (Dijkstra) + path_to_primitives
+□ repositories/people.py — CRUD personas + búsqueda por similitud de embedding
+□ repositories/memory.py — filtro de privacidad en escritura
 □ docker-compose.yml funcional (fastapi + nginx)
 □ Servidor en IP 192.168.2.200:9393 (Nginx TLS)
 □ Streamlit simulator funcional (tests/streamlit_simulator/app.py)
@@ -4090,3 +4403,4 @@ La implementación debe seguir este documento como guía, ajustando detalles seg
 | 1.2 | 2026-02-08 | Claude | Flujo de activación y reconocimiento facial on-device (ML Kit + FaceNet TFLite) |
 | 1.3 | 2026-02-18 | Claude | Ajustes: TTS Android nativo (reemplaza Piper/ElevenLabs), LLM migrado a Gemini Flash Lite, LangChain Deep Agents como framework del agente (extensible con MCP/tools/skills), captura de foto/video por comando de voz, system prompt TTS-safe, plan de implementación incremental con pruebas por fase |
 | 1.4 | 2026-02-18 | Claude | Ajustes 1-24: búsqueda persona con rotación ±90° (PERSON_SEARCH_TIMEOUT_MS=8s), solo cámara frontal, escucha continua 60s (CONVERSATION_KEEP_ALIVE_MS), landscape fija + tema oscuro + emoji OpenMoji CDN, control solo por voz, historial con compactación (20 msgs) + filtro privacidad, indicadores batería ≤15%, secuencias de movimiento ESP32 + total_duration_ms, Docker Compose (Nginx+FastAPI), eliminado reconocimiento facial backend, 2 ruedas + apoyo, 2 sensores distancia HC-SR04, RGB LED 4 patas, solo L298N + Gear Motor TT Yellow 5V, VL53L0X ToF cliff, pack 6x18650 3S2P + BMS 3S 20A + 2 buck converters, IP 192.168.2.200:9393, Streamlit simulator, OpenMoji sin ZIP |
+| 2.0 | 2026-02-21 | Claude | Transformación a amigo familiar: identidad rediseñada (curioso, empático, explorador); eliminados usuarios/app → reemplazados por `people` + `face_embeddings` múltiples; mapa mental de zonas (`zones` + `zone_paths`, grafo BFS/Dijkstra); modo exploración autónoma (`explore_mode` WS, `ExplorationService`); sistema de ética y límites físicos; 5 primitivas ESP32 reales (`turn_right_deg`, `turn_left_deg`, `move_forward_cm`, `move_backward_cm`, `led_color`) + aliases gesturales; nuevos tags v2.0 (`[memory:]`, `[person_name:]`, `[zone_learn:]`); REST reducido a 2 endpoints (`GET /api/health`, `GET /api/restore`); system prompt reescrito; BD reescrita (elimina `users`, `interactions`; añade `people`, `face_embeddings`, `zones`, `zone_paths`); nuevos mensajes WS: `explore_mode`, `face_scan_mode`, `person_detected`, `zone_update`, `battery_alert`, `person_registered`, `exploration_actions`, `face_scan_actions`, `low_battery_alert` |
