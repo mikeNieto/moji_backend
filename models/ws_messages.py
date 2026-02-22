@@ -38,21 +38,27 @@ class InteractionStartMessage(BaseModel):
     person_id: str | None = None  # None si Robi no ha reconocido a nadie aún
     face_recognized: bool = False
     face_confidence: float | None = None  # similitud coseno 0-1; None si no reconocido
-    face_embedding: str | None = None  # base64 128D; presente cuando se quiere registrar nombre
+    face_embedding: str | None = (
+        None  # base64 128D; presente cuando se quiere registrar nombre
+    )
     context: dict[str, Any] = Field(default_factory=dict)
 
 
 class AudioEndMessage(BaseModel):
     type: Literal["audio_end"]
     request_id: str
-    face_embedding: str | None = None  # base64 128D; adjunto para flujo de captura de nombre
+    face_embedding: str | None = (
+        None  # base64 128D; adjunto para flujo de captura de nombre
+    )
 
 
 class TextMessage(BaseModel):
     type: Literal["text"]
     request_id: str
     content: str
-    face_embedding: str | None = None  # base64 128D; adjunto para flujo de captura de nombre
+    face_embedding: str | None = (
+        None  # base64 128D; adjunto para flujo de captura de nombre
+    )
 
 
 class ImageMessage(BaseModel):
@@ -175,7 +181,9 @@ class ResponseMetaMessage(BaseModel):
     response_text: str
     expression: ExpressionPayload
     actions: list[dict[str, Any]] = Field(default_factory=list)
-    person_name: str | None = None  # extraído de [person_name:NOMBRE] cuando llega embedding
+    person_name: str | None = (
+        None  # extraído de [person_name:NOMBRE] cuando llega embedding
+    )
 
 
 class StreamEndMessage(BaseModel):
