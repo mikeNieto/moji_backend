@@ -206,12 +206,16 @@ def _build_context_block(
 
     if has_face_embedding:
         parts.append(
-            "INSTRUCCIÓN ESPECIAL — EXTRACCIÓN DE NOMBRE:\n"
-            "La persona acaba de decir su nombre en el audio que has recibido. "
-            "Escucha con atención y extrae el nombre. "
-            "Emite [person_name:NOMBRE] en tu respuesta (sustituyendo NOMBRE por el nombre real). "
-            "Si no puedes extraerlo con seguridad, pregunta amablemente: '¿Cómo te llamas?'. "
-            "No emitas [person_name:...] si no estás seguro."
+            "INSTRUCCIÓN ESPECIAL — REGISTRO DE NOMBRE (OBLIGATORIO):\n"
+            "Esta interacción forma parte del flujo de registro de una persona nueva. "
+            "La persona acaba de decirte su nombre, ya sea en texto o en audio. "
+            "Debes extraer ese nombre del mensaje del usuario con atención. "
+            "Una vez extraído, emite la etiqueta [person_name:NOMBRE] en algún punto "
+            "de tu respuesta (sustituyendo NOMBRE por el nombre real extraído). "
+            "Esta etiqueta es OBLIGATORIA en esta respuesta — sin ella el sistema no "
+            "podrá registrar a la persona. Si por algún motivo no puedes extraer el "
+            "nombre con certeza, pregunta amablemente '¿Cómo te llamas?' y NO emitas "
+            "la etiqueta hasta estar seguro."
         )
 
     return "\n\n".join(parts)
