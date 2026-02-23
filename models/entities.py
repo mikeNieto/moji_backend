@@ -4,8 +4,6 @@ Usadas como DTOs entre repositorios y servicios.
 
 v2.0 — Moji Amigo Familiar
   - Eliminadas: User, Interaction
-  - Nuevas: Person, FaceEmbedding, Zone, ZonePath
-  - Modificada: Memory (person_id nullable, memory_type ampliado, zone_id)
 """
 
 from dataclasses import dataclass, field
@@ -43,52 +41,19 @@ class FaceEmbedding:
     id: int | None = None
 
 
-# ── Zonas / Mapa mental ───────────────────────────────────────────────────────
-
-# Categorías válidas de zona
-ZONE_CATEGORIES = frozenset(
-    {"kitchen", "living_area", "bedroom", "bathroom", "outdoor", "unknown"}
-)
-
-
-@dataclass
-class Zone:
-    """Nodo del mapa mental de la casa."""
-
-    name: str  # p.ej. "cocina principal"
-    category: str  # kitchen | living | bedroom | bathroom | unknown
-    description: str = ""
-    known_since: datetime = field(default_factory=_now)
-    accessible: bool = True
-    current_moji_zone: bool = False  # solo una zona activa a la vez
-    id: int | None = None
-
-
-@dataclass
-class ZonePath:
-    """Arista del grafo de zonas — cómo ir de una zona a otra."""
-
-    from_zone_id: int  # FK → zones.id
-    to_zone_id: int  # FK → zones.id
-    direction_hint: str = ""  # "girar derecha 90° avanzar 2m"
-    distance_cm: int | None = None
-    id: int | None = None
-
-
 # ── Memorias ──────────────────────────────────────────────────────────────────
 
 # Tipos válidos de memoria
-MEMORY_TYPES = frozenset({"experience", "zone_info", "person_fact", "general"})
+MEMORY_TYPES = frozenset({"experience", "person_fact", "general"})
 
 
 @dataclass
 class Memory:
     """Recuerdo almacenado por Moji."""
 
-    memory_type: str  # experience | zone_info | person_fact | general
+    memory_type: str  # experience | person_fact | general
     content: str
     person_id: str | None = None  # FK → people.person_id (nullable)
-    zone_id: int | None = None  # FK → zones.id (nullable)
     importance: int = 5  # 1-10
     timestamp: datetime = field(default_factory=_now)
     expires_at: datetime | None = None

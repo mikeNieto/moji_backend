@@ -2,15 +2,6 @@
 Dependencias FastAPI compartidas por todos los routers v2.0.
 
 Uso:
-    from dependencies import get_session, get_people_repository, get_zones_repository
-    from repositories.people import PeopleRepository
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    @router.get(...)
-    async def endpoint(
-        people: PeopleRepository = Depends(get_people_repository),
-    ):
-        ...
 """
 
 from collections.abc import AsyncGenerator
@@ -21,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from repositories.memory import MemoryRepository
 from repositories.people import PeopleRepository
-from repositories.zones import ZonesRepository
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -43,13 +33,6 @@ async def get_people_repository(
 ) -> PeopleRepository:
     """Inyecta un PeopleRepository con la sesión del request."""
     return PeopleRepository(session)
-
-
-async def get_zones_repository(
-    session: AsyncSession = Depends(get_session),
-) -> ZonesRepository:
-    """Inyecta un ZonesRepository con la sesión del request."""
-    return ZonesRepository(session)
 
 
 async def get_memory_repository(

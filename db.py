@@ -6,9 +6,7 @@ v2.0 — Moji Amigo Familiar
 Tablas:
   people               — personas conocidas por Moji
   face_embeddings      — embeddings faciales (N por persona)
-  zones                — mapa mental de la casa (nodos)
-  zone_paths           — caminos entre zonas (aristas)
-  memories             — recuerdos de Moji (person_id nullable, zone_id nullable)
+  memories             — recuerdos de Moji (person_id nullable)
   conversation_history — historial de mensajes por sesión
 
 Uso:
@@ -24,7 +22,7 @@ Uso:
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import ForeignKey, Index, String, Text, func
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -128,42 +126,6 @@ class FaceEmbeddingRow(Base):
     __table_args__ = (Index("ix_face_emb_person", "person_id", "captured_at"),)
 
 
-class ZoneRow(Base):
-    __tablename__ = "zones"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    category: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="unknown"
-    )  # kitchen | living | bedroom | bathroom | unknown
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    known_since: Mapped[datetime] = mapped_column(
-        nullable=False, server_default=func.now()
-    )
-    accessible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    current_moji_zone: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )  # solo una fila puede ser True a la vez
-
-
-class ZonePathRow(Base):
-    __tablename__ = "zone_paths"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    from_zone_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=False
-    )
-    to_zone_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("zones.id", ondelete="CASCADE"), nullable=False
-    )
-    direction_hint: Mapped[str] = mapped_column(
-        Text, nullable=False, default=""
-    )  # "girar derecha 90° avanzar 2m"
-    distance_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    __table_args__ = (Index("ix_zone_paths_from_to", "from_zone_id", "to_zone_id"),)
-
-
 class MemoryRow(Base):
     __tablename__ = "memories"
 
@@ -174,14 +136,9 @@ class MemoryRow(Base):
         nullable=True,
         index=True,
     )  # nullable — hay memorias generales no ligadas a persona
-    zone_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("zones.id", ondelete="SET NULL"),
-        nullable=True,
-    )  # contexto espacial de la memoria
     memory_type: Mapped[str] = mapped_column(
         String(20), nullable=False
-    )  # experience | zone_info | person_fact | general
+    )  # experience | person_fact | general
     content: Mapped[str] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(nullable=False, default=5)  # 1-10
     timestamp: Mapped[datetime] = mapped_column(

@@ -127,7 +127,6 @@ async def compact_memories_async(person_id: str | None = None) -> None:
     - Si `person_id` es None, compacta las memorias generales (person_id IS NULL).
     - Por cada tipo de memoria con más de COMPACTION_THRESHOLD entradas activas,
       fusiona todas menos las 2 más recientes (para no perder contexto inmediato).
-    - Las memorias de zona (zone_info) se compactan por separado — son el mapa mental.
     - Se lanza como tarea asíncrona en background; los errores se loggean sin propagar.
 
     Llamar con asyncio.create_task() para no bloquear la respuesta al usuario:

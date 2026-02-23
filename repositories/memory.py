@@ -2,9 +2,7 @@
 MemoryRepository — CRUD asíncrono sobre la tabla `memories`.
 
 v2.0 — Moji Amigo Familiar
-  - `user_id` reemplazado por `person_id` nullable (hay memorias generales)
-  - `memory_type` expandido: experience | zone_info | person_fact | general
-  - Nuevo campo `zone_id` nullable para memorias contextualizadas en lugar
+  - `memory_type` expandido: experience | person_fact | general
   - Nuevo método `get_moji_context()` para construir el prompt del agente
 
 Uso:
@@ -81,7 +79,6 @@ def _row_to_entity(row: MemoryRow) -> Memory:
     return Memory(
         id=row.id,
         person_id=row.person_id,
-        zone_id=row.zone_id,
         memory_type=row.memory_type,
         content=row.content,
         importance=row.importance,
@@ -103,7 +100,6 @@ class MemoryRepository:
         content: str,
         *,
         person_id: str | None = None,
-        zone_id: int | None = None,
         importance: int = 5,
         expires_at: datetime | None = None,
     ) -> Memory | None:
@@ -111,8 +107,7 @@ class MemoryRepository:
         Persiste una nueva memoria.
 
         - `person_id` nullable: None para memorias generales de Moji.
-        - `zone_id` nullable: contexto espacial opcional.
-        - `memory_type` debe ser uno de: experience | zone_info | person_fact | general.
+        - `memory_type` debe ser uno de: experience | person_fact | general.
         - Devuelve None si el contenido es detectado como privado.
         """
         if is_private(content):
@@ -120,7 +115,6 @@ class MemoryRepository:
 
         row = MemoryRow(
             person_id=person_id,
-            zone_id=zone_id,
             memory_type=memory_type,
             content=content,
             importance=importance,
@@ -224,7 +218,6 @@ class MemoryRepository:
         person_id: str | None = None,
         max_general: int = 10,
         max_person: int = 8,
-        max_zone_info: int = 5,
     ) -> dict[str, list[Memory]]:
         """
         Recupera el contexto completo que se inyecta en el prompt del agente:
@@ -232,7 +225,6 @@ class MemoryRepository:
         Claves del dict devuelto:
           "general"      — memorias generales de Moji (experience + general)
           "person"       — memorias ligadas a `person_id` (si se provee)
-          "zone_info"    — memorias de tipo zone_info (mapa mental resumido)
 
         Ordena por importancia desc dentro de cada grupo.
         """
@@ -251,17 +243,6 @@ class MemoryRepository:
         general_result = await self._session.execute(general_stmt)
         general_memories = [_row_to_entity(r) for r in general_result.scalars().all()]
 
-        # Memorias de zona (mapa mental)
-        zone_stmt = (
-            select(MemoryRow)
-            .where(MemoryRow.memory_type == "zone_info")
-            .where(active_filter)
-            .order_by(MemoryRow.importance.desc(), MemoryRow.timestamp.desc())
-            .limit(max_zone_info)
-        )
-        zone_result = await self._session.execute(zone_stmt)
-        zone_memories = [_row_to_entity(r) for r in zone_result.scalars().all()]
-
         # Memorias de la persona actual
         person_memories: list[Memory] = []
         if person_id is not None:
@@ -278,7 +259,6 @@ class MemoryRepository:
         return {
             "general": general_memories,
             "person": person_memories,
-            "zone_info": zone_memories,
         }
 
     async def delete(self, memory_id: int) -> bool:
@@ -308,7 +288,6 @@ class MemoryRepository:
         memory_type: str,
         content: str,
         person_id: str | None = None,
-        zone_id: int | None = None,
         importance: int = 7,
     ) -> Memory | None:
         """
@@ -326,6 +305,5 @@ class MemoryRepository:
             memory_type=memory_type,
             content=content,
             person_id=person_id,
-            zone_id=zone_id,
             importance=importance,
         )

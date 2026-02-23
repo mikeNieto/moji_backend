@@ -2,7 +2,7 @@
 Tests unitarios v2.0 — Modelos + Base de Datos
 
 Cubre:
-  - Entidades de dominio v2.0 (Person, FaceEmbedding, Zone, ZonePath, Memory)
+  - Entidades de dominio v2.0 (Person, FaceEmbedding, Memory)
   - Modelos Pydantic WS messages v2.0 (client + server)
   - Modelos Pydantic responses (RestoreResponse, HealthResponse, ErrorResponse)
   - Creación de tablas SQLAlchemy con SQLite in-memory
@@ -19,8 +19,6 @@ from db import (
     FaceEmbeddingRow,
     MemoryRow,
     PersonRow,
-    ZoneRow,
-    ZonePathRow,
     create_all_tables,
     drop_all_tables,
     init_db,
@@ -29,9 +27,6 @@ from models.entities import (
     ConversationMessage,
     Memory,
     Person,
-    Zone,
-    ZonePath,
-    ZONE_CATEGORIES,
     MEMORY_TYPES,
 )
 from models.responses import (
@@ -40,15 +35,12 @@ from models.responses import (
     RestoreMemoryResponse,
     RestorePersonResponse,
     RestoreResponse,
-    RestoreZonePathResponse,
-    RestoreZoneResponse,
 )
 from models.ws_messages import (
     AudioEndMessage,
     AuthMessage,
     AuthOkMessage,
     EmotionMessage,
-    ExploreModeMessage,
     ExpressionPayload,
     FaceScanModeMessage,
     InteractionStartMessage,
@@ -59,7 +51,6 @@ from models.ws_messages import (
     TextChunkMessage,
     TextMessage,
     WsErrorMessage,
-    ZoneUpdateMessage,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,7 +91,6 @@ class TestEntities:
     def test_memory_defaults_v2(self):
         m = Memory(memory_type="general", content="Hay un gato en casa")
         assert m.person_id is None
-        assert m.zone_id is None
         assert m.importance == 5
         assert m.expires_at is None
 
@@ -113,29 +103,14 @@ class TestEntities:
         )
         assert m.person_id == "persona_ana_001"
 
-    def test_zone_defaults(self):
-        z = Zone(name="sala", category="living_area")
-        assert z.accessible is True
-        assert z.current_moji_zone is False
-        assert z.description == ""
-
-    def test_zone_path_fields(self):
-        zp = ZonePath(from_zone_id=1, to_zone_id=2, direction_hint="norte")
-        assert zp.distance_cm is None
-
     def test_conversation_message_defaults(self):
         msg = ConversationMessage(session_id="sess-1", role="user", content="Hola")
         assert msg.is_compacted is False
         assert msg.message_index == 0
 
-    def test_zone_categories_constant(self):
-        assert "living_area" in ZONE_CATEGORIES
-        assert "bedroom" in ZONE_CATEGORIES
-
     def test_memory_types_constant(self):
         assert "general" in MEMORY_TYPES
         assert "person_fact" in MEMORY_TYPES
-        assert "zone_info" in MEMORY_TYPES
         assert "experience" in MEMORY_TYPES
 
 
@@ -175,20 +150,6 @@ class TestResponseModels:
         )
         assert len(r.face_embeddings) == 2
 
-    def test_restore_zone_response(self):
-        path = RestoreZonePathResponse(to_zone_id=2, direction_hint="norte")
-        zone = RestoreZoneResponse(
-            id=1,
-            name="sala",
-            category="living_area",
-            known_since=datetime(2026, 1, 1),
-            accessible=True,
-            is_current=True,
-            paths=[path],
-        )
-        assert zone.is_current is True
-        assert len(zone.paths) == 1
-
     def test_restore_memory_response(self):
         m = RestoreMemoryResponse(
             id=5,
@@ -198,13 +159,11 @@ class TestResponseModels:
             created_at=datetime(2026, 1, 1),
         )
         assert m.person_id is None
-        assert m.zone_id is None
 
     def test_restore_response_full(self):
-        r = RestoreResponse(people=[], zones=[], general_memories=[])
+        r = RestoreResponse(people=[], general_memories=[])
         data = json.loads(r.model_dump_json())
         assert "people" in data
-        assert "zones" in data
         assert "general_memories" in data
 
 
@@ -254,46 +213,9 @@ class TestWsClientMessages:
         msg = TextMessage(type="text", request_id="req-2", content="¿Qué hora es?")
         assert msg.face_embedding is None
 
-    def test_explore_mode_message(self):
-        msg = ExploreModeMessage(
-            type="explore_mode",
-            request_id="req-3",
-            duration_minutes=10,
-        )
-        assert 1 <= msg.duration_minutes <= 60
-
-    def test_explore_mode_bounds(self):
-        with pytest.raises(Exception):
-            ExploreModeMessage(
-                type="explore_mode", request_id="req", duration_minutes=0
-            )
-        with pytest.raises(Exception):
-            ExploreModeMessage(
-                type="explore_mode", request_id="req", duration_minutes=61
-            )
-
     def test_face_scan_mode_message(self):
         msg = FaceScanModeMessage(type="face_scan_mode", request_id="req-4")
         assert msg.type == "face_scan_mode"
-
-    def test_zone_update_message(self):
-        msg = ZoneUpdateMessage(
-            type="zone_update",
-            request_id="req-5",
-            zone_name="cocina",
-            category="kitchen",
-            action="enter",
-        )
-        assert msg.action == "enter"
-
-    def test_zone_update_invalid_action(self):
-        with pytest.raises(Exception):
-            ZoneUpdateMessage(
-                type="zone_update",
-                request_id="req",
-                zone_name="sala",
-                action="fly",  # type: ignore[arg-type]
-            )
 
     def test_person_detected_known(self):
         msg = PersonDetectedMessage(
@@ -387,12 +309,10 @@ class TestWsServerMessages:
 
 @pytest.mark.asyncio
 async def test_tables_created(db_session: AsyncSession):
-    """Las 6 tablas deben existir tras create_all_tables()."""
+    """Las 4 tablas deben existir tras create_all_tables()."""
     expected = (
         "people",
         "face_embeddings",
-        "zones",
-        "zone_paths",
         "memories",
         "conversation_history",
     )
@@ -434,19 +354,6 @@ async def test_insert_person_and_memory(db_session: AsyncSession):
     db_session.add(mem)
     await db_session.flush()
     assert mem.id is not None
-
-
-@pytest.mark.asyncio
-async def test_insert_zone_and_path(db_session: AsyncSession):
-    z1 = ZoneRow(name="sala", category="living_area")
-    z2 = ZoneRow(name="cocina", category="kitchen")
-    db_session.add_all([z1, z2])
-    await db_session.flush()
-
-    path = ZonePathRow(from_zone_id=z1.id, to_zone_id=z2.id, direction_hint="norte")
-    db_session.add(path)
-    await db_session.flush()
-    assert path.id is not None
 
 
 @pytest.mark.asyncio

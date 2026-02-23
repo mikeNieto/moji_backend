@@ -43,8 +43,6 @@ _OPENMOJI_CDN = (
 )
 _OPENMOJI_SVG = "https://openmoji.org/data/color/svg/{code}.svg"
 
-ZONE_CATEGORIES = ["unknown", "kitchen", "living", "bedroom", "bathroom"]
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -264,7 +262,7 @@ def ws_send_and_receive(
 
 def ws_send_event(payload: dict, wait_types: list[str], timeout: float = 15.0) -> dict:
     """
-    Envía un evento WS (explore_mode, face_scan_mode, etc.) y espera
+    Envía un evento WS (face_scan_mode, person_detected, etc.) y espera
     hasta recibir un mensaje de los tipos esperados o timeout.
 
     Retorna un dict con 'type', 'chunks', 'error'.
@@ -406,10 +404,9 @@ with st.sidebar:
         code, body = rest_get(rest_base, "/api/restore", api_key)
         if code == 200:
             people = body.get("people", [])
-            zones = body.get("zones", [])
-            memories = body.get("memories", [])
+            memories = body.get("general_memories", [])
             st.success(
-                f"**{code}** — {len(people)} personas · {len(zones)} zonas · {len(memories)} memorias"
+                f"**{code}** — {len(people)} personas · {len(memories)} memorias"
             )
             with st.expander("📦 Datos completos de restauración"):
                 st.json(body)
@@ -484,41 +481,6 @@ with main_col:
             "Simula los eventos que Android envía a Moji según el protocolo v2.0."
         )
 
-        # ── explore_mode ──────────────────────────────────────────────────────
-        with st.expander("🗺️ explore_mode — Modo exploración autónoma", expanded=True):
-            explore_duration = st.slider(
-                "Duración (minutos)",
-                min_value=1,
-                max_value=30,
-                value=5,
-                key="explore_duration",
-            )
-            if st.button(
-                "Enviar explore_mode",
-                type="primary",
-                use_container_width=True,
-                disabled=not st.session_state.connected,
-            ):
-                req_id = str(uuid.uuid4())
-                with st.spinner("Esperando exploration_actions…"):
-                    try:
-                        ev_result = ws_send_event(
-                            payload={
-                                "type": "explore_mode",
-                                "request_id": req_id,
-                                "duration_minutes": explore_duration,
-                            },
-                            wait_types=["exploration_actions"],
-                        )
-                    except Exception as exc:
-                        st.session_state.connected = False
-                        ev_result = {"received": None, "chunks": [], "error": str(exc)}
-                st.session_state.last_event_result = {
-                    "kind": "explore_mode",
-                    **ev_result,
-                }
-                st.rerun()
-
         # ── face_scan_mode ────────────────────────────────────────────────────
         with st.expander("🔍 face_scan_mode — Escaneo facial activo"):
             if st.button(
@@ -538,56 +500,6 @@ with main_col:
                         ev_result = {"received": None, "chunks": [], "error": str(exc)}
                 st.session_state.last_event_result = {
                     "kind": "face_scan_mode",
-                    **ev_result,
-                }
-                st.rerun()
-
-        # ── zone_update ───────────────────────────────────────────────────────
-        with st.expander("🏠 zone_update — Informar zona actual"):
-            zone_name_in = st.text_input(
-                "Nombre de la zona", value="sala", key="zone_name_input"
-            )
-            zone_cat_in = st.selectbox(
-                "Categoría", ZONE_CATEGORIES, key="zone_cat_input"
-            )
-            zone_action_in = st.radio(
-                "Acción",
-                ["enter", "discover", "leave"],
-                horizontal=True,
-                key="zone_action_input",
-            )
-            if st.button(
-                "Enviar zone_update",
-                use_container_width=True,
-                disabled=not st.session_state.connected,
-            ):
-                req_id = str(uuid.uuid4())
-                with st.spinner("Enviando zone_update…"):
-                    try:
-                        ws = st.session_state.ws
-                        ws.send(
-                            json.dumps(
-                                {
-                                    "type": "zone_update",
-                                    "request_id": req_id,
-                                    "zone_name": zone_name_in,
-                                    "category": zone_cat_in,
-                                    "action": zone_action_in,
-                                }
-                            )
-                        )
-                        ev_result = {
-                            "received": {"type": "zone_update_sent"},
-                            "chunks": [],
-                            "error": None,
-                        }
-                    except Exception as exc:
-                        st.session_state.connected = False
-                        ev_result = {"received": None, "chunks": [], "error": str(exc)}
-                st.session_state.last_event_result = {
-                    "kind": "zone_update",
-                    "zone_name": zone_name_in,
-                    "action": zone_action_in,
                     **ev_result,
                 }
                 st.rerun()
@@ -1108,16 +1020,7 @@ with main_col:
             received = ev.get("received") or {}
             rtype = received.get("type", "")
 
-            if rtype == "exploration_actions":
-                speech = received.get("exploration_speech", "")
-                actions = received.get("actions", [])
-                if speech:
-                    st.markdown(f"**Moji dice:** {speech}")
-                if actions:
-                    with st.expander(f"⚙️ Acciones de exploración ({len(actions)})"):
-                        st.json(actions)
-
-            elif rtype == "face_scan_actions":
+            if rtype == "face_scan_actions":
                 actions = received.get("actions", [])
                 st.info(f"Secuencia de escaneo — {len(actions)} grupo(s) de acciones")
                 if actions:
@@ -1136,18 +1039,13 @@ with main_col:
                     f"Verifica que Moji recuerde cosas de turnos anteriores."
                 )
 
-            elif rtype in ("zone_update_sent", "person_detected_sent"):
-                zone = ev.get("zone_name")
-                zaction = ev.get("action")
-                if zone:
-                    st.success(f"✅ zone_update enviado: **{zone}** ({zaction})")
+            elif rtype == "person_detected_sent":
+                known = ev.get("known", False)
+                pid = ev.get("person_id")
+                if known and pid:
+                    st.success(f"✅ person_detected enviado: **{pid}** (conocida)")
                 else:
-                    known = ev.get("known", False)
-                    pid = ev.get("person_id")
-                    if known and pid:
-                        st.success(f"✅ person_detected enviado: **{pid}** (conocida)")
-                    else:
-                        st.success("✅ person_detected enviado: persona desconocida")
+                    st.success("✅ person_detected enviado: persona desconocida")
             else:
                 if received:
                     st.json(received)

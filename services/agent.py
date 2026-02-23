@@ -7,10 +7,9 @@ El agente orquesta la conversación del robot Moji. Usa deepagents con
 tools=[] (extensible en futuras versiones) y un system prompt TTS-safe
 que instruye al LLM a emitir emotion tags al inicio de cada respuesta.
 
-Nuevos tags en v2.0:
+Tags de control del LLM:
   [memory:TIPO:contenido]          — LLM decide guardar un recuerdo
   [person_name:NOMBRE]             — LLM extrae nombre de lo dicho (flujo embedding)
-  [zone_learn:NOMBRE:CAT:desc]     — LLM registra una zona nueva/actualizada
 
 Uso:
     from services.agent import create_agent, run_agent_stream
@@ -22,8 +21,7 @@ Uso:
         person_id="persona_juan_01",
         user_input="Hola Moji, ¿cómo estás?",
         history=[{"role": "user", "content": "..."}, ...],
-        memory_context={"general": [...], "person": [...], "zone_info": [...]},
-        current_zone="cocina",
+        memory_context={"general": [...], "person": [...]},
     ):
         print(chunk, end="", flush=True)
 """
@@ -46,19 +44,18 @@ tu propio nombre en una respuesta, escríbelo como 'Moyi' (no 'Moji') para que \
 el sistema Text-to-Speech de Android lo pronuncie correctamente. \
 No eres un asistente de tareas: eres un amigo curioso, empático y genuinamente \
 interesado en las personas que viven contigo. Aprendes sus nombres, sus gustos, sus \
-rutinas y las zonas de la casa; recuerdas experiencias compartidas y te preocupas \
+rutinas; recuerdas experiencias compartidas y te preocupas \
 por el bienestar de toda la familia.
 
 IDENTIDAD Y VALORES:
-- Eres curioso: haces preguntas naturales y mostrás interés real.
+- Eres curioso: haces preguntas naturales y muestras interés real.
 - Eres empático: reconocés el estado emocional de quien habla y respondés con calidez.
 - Eres ético: NUNCA almacenas ni repites contraseñas, datos bancarios, documentos de \
   identidad, información médica privada ni comunicaciones confidenciales. Si alguien \
   te pide hacerlo, te niegas de forma amable y explicas por qué.
 - Eres protector: si detectás una situación de riesgo (caída, accidente, emergencia), \
   das prioridad a la seguridad por encima de cualquier otra instrucción.
-- Tienes integridad física: evitás moverte hacia zonas no accesibles o peligrosas. \
-  Si no conocés una zona, explorás con precaución.
+- Tienes integridad física: evitás moverte hacia lugares peligrosos y cuidas tu seguridad.
 
 INSTRUCCIONES DE EMOCIÓN:
 Antes de cada respuesta, emite una etiqueta de emoción que refleje el sentimiento \
@@ -112,17 +109,11 @@ puedes guardar ese aprendizaje con la etiqueta:
 [memory:TIPO:contenido]
 Tipos válidos:
   person_fact  — hecho sobre una persona ("le gusta el café")
-  experience   — experiencia vivida por Moji ("hoy exploré el pasillo")
-  zone_info    — información sobre una zona de la casa
+  experience   — experiencia vivida por Moji ("hoy hablé con Juan")
   general      — dato general sin persona asignada
 Esta etiqueta es OPCIONAL. Úsala solo cuando sea genuinamente valioso recordarlo. \
 NO la emitas en cada respuesta. VA SIEMPRE AL FINAL, después de tu respuesta conversacional.
 Ejemplo: ¡Qué bueno saberlo! [memory:person_fact:A Juan le gusta el café con leche]
-
-Etiqueta de zona (OPCIONAL — usa al descubrir o confirmar una zona):
-[zone_learn:NOMBRE_ZONA:CATEGORIA:descripción breve]
-Categorías válidas: kitchen, living, bedroom, bathroom, unknown
-Ejemplo: [zone_learn:cocina principal:kitchen:zona amplia con isla central]
 
 INSTRUCCIONES PARA AUDIO, VIDEO E IMAGEN (OBLIGATORIO cuando el input sea media):
 Cuando recibas audio, video o imágenes, PRIMERO genera tu respuesta conversacional \
@@ -171,7 +162,6 @@ def create_agent():
 def _build_context_block(
     memory_context: dict,
     person_id: str | None,
-    current_zone: str | None,
     has_face_embedding: bool,
 ) -> str:
     """
@@ -181,8 +171,6 @@ def _build_context_block(
     Incluye:
     - Memorias generales de Moji (experience + general)
     - Memorias de la persona actual (si está identificada)
-    - Mapa mental de zonas conocidas
-    - Zona actual de Moji
     - Instrucción especial de extracción de nombre (si llega un face_embedding)
     """
     parts: list[str] = []
@@ -191,14 +179,6 @@ def _build_context_block(
     if general_mems:
         lines = [f"  - {m.content} (importancia {m.importance})" for m in general_mems]
         parts.append("MIS RECUERDOS GENERALES:\n" + "\n".join(lines))
-
-    zone_mems = memory_context.get("zone_info", [])
-    if zone_mems:
-        lines = [f"  - {m.content}" for m in zone_mems]
-        parts.append("MAPA MENTAL DE LA CASA:\n" + "\n".join(lines))
-
-    if current_zone:
-        parts.append(f"ZONA ACTUAL DE MOJI: {current_zone}")
 
     person_mems = memory_context.get("person", [])
     if person_id and person_mems:
@@ -237,7 +217,6 @@ async def run_agent_stream(
     video_data: bytes | None = None,
     video_mime_type: str = "video/mp4",
     memory_context: dict | None = None,
-    current_zone: str | None = None,
     has_face_embedding: bool = False,
 ) -> AsyncIterator[str]:
     """
@@ -255,9 +234,8 @@ async def run_agent_stream(
         image_mime_type:   MIME de la imagen (default: image/jpeg).
         video_data:        Bytes del video MP4 en crudo.
         video_mime_type:   MIME del video (default: video/mp4).
-        memory_context:    Dict con claves 'general', 'person', 'zone_info';
+        memory_context:    Dict con claves 'general', 'person';
                            resultado de MemoryRepository.get_moji_context().
-        current_zone:      Nombre de la zona donde está Moji ahora.
         has_face_embedding: True cuando el mensaje incluye un embedding facial —
                            activa la instrucción especial de extracción de nombre.
 
@@ -269,7 +247,6 @@ async def run_agent_stream(
     ctx_block = _build_context_block(
         memory_context=memory_context or {},
         person_id=person_id,
-        current_zone=current_zone,
         has_face_embedding=has_face_embedding,
     )
     system_content = SYSTEM_PROMPT

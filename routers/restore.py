@@ -16,12 +16,9 @@ from models.responses import (
     RestoreMemoryResponse,
     RestorePersonResponse,
     RestoreResponse,
-    RestoreZonePathResponse,
-    RestoreZoneResponse,
 )
 from repositories.memory import MemoryRepository
 from repositories.people import PeopleRepository
-from repositories.zones import ZonesRepository
 
 router = APIRouter(prefix="/api", tags=["restore"])
 
@@ -32,11 +29,9 @@ async def restore(session: AsyncSession = Depends(get_session)) -> RestoreRespon
     Devuelve el estado completo de Moji para re-sincronización del cliente Android.
 
     - **people**: todas las personas conocidas con embeddings
-    - **zones**: todas las zonas con sus paths salientes
     - **general_memories**: memorias generales (sin persona asociada)
     """
     people_repo = PeopleRepository(session)
-    zones_repo = ZonesRepository(session)
     memory_repo = MemoryRepository(session)
 
     # ── Personas ──────────────────────────────────────────────────────────────
@@ -66,33 +61,6 @@ async def restore(session: AsyncSession = Depends(get_session)) -> RestoreRespon
         for p in all_people
     ]
 
-    # ── Zonas ─────────────────────────────────────────────────────────────────
-    all_zones = await zones_repo.list_all()
-
-    zones_out = []
-    for zone in all_zones:
-        paths = await zones_repo.get_paths_from(zone.id)  # type: ignore[arg-type]
-        paths_out = [
-            RestoreZonePathResponse(
-                to_zone_id=path.to_zone_id,
-                direction_hint=path.direction_hint,
-                distance_cm=path.distance_cm,
-            )
-            for path in paths
-        ]
-        zones_out.append(
-            RestoreZoneResponse(
-                id=zone.id,  # type: ignore[arg-type]
-                name=zone.name,
-                category=zone.category,
-                description=zone.description,
-                known_since=zone.known_since,
-                accessible=zone.accessible,
-                is_current=zone.current_moji_zone,
-                paths=paths_out,
-            )
-        )
-
     # ── Memorias generales ────────────────────────────────────────────────────
     general_mems = await memory_repo.get_general(include_expired=False, limit=50)
     memories_out = [
@@ -103,13 +71,11 @@ async def restore(session: AsyncSession = Depends(get_session)) -> RestoreRespon
             importance=m.importance,
             created_at=m.timestamp,
             person_id=m.person_id,
-            zone_id=m.zone_id,
         )
         for m in general_mems
     ]
 
     return RestoreResponse(
         people=people_out,
-        zones=zones_out,
         general_memories=memories_out,
     )

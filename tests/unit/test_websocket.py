@@ -23,7 +23,6 @@ from ws_handlers.protocol import (
     make_capture_request,
     make_emotion,
     make_error,
-    make_exploration_actions,
     make_face_scan_actions,
     make_low_battery_alert,
     make_response_meta,
@@ -168,25 +167,6 @@ class TestProtocolBuilders:
         result = json.loads(make_capture_request("req-11", "video"))
         assert result["capture_type"] == "video"
 
-    def test_make_exploration_actions(self):
-        actions = [
-            {"action": "turn_right_deg", "params": {"degrees": 90}, "duration_ms": 1000}
-        ]
-        result = json.loads(
-            make_exploration_actions(
-                "req-e1", actions, exploration_speech="Explorando..."
-            )
-        )
-        assert result["type"] == "exploration_actions"
-        assert result["request_id"] == "req-e1"
-        assert result["actions"] == actions
-        assert result["exploration_speech"] == "Explorando..."
-
-    def test_make_exploration_actions_empty_speech(self):
-        result = json.loads(make_exploration_actions("req-e2", []))
-        assert result["type"] == "exploration_actions"
-        assert result["exploration_speech"] == ""
-
     def test_make_face_scan_actions(self):
         actions = [
             {"action": "turn_left_deg", "params": {"degrees": 45}, "duration_ms": 500}
@@ -322,7 +302,7 @@ class TestLoadMojiContext:
         ctx = await _load_moji_context(None)
         # Puede ser vacío, pero si tiene claves deben ser de los tipos esperados
         for key in ctx:
-            assert key in ("general", "person", "zone_info")
+            assert key in ("general", "person")
 
     async def test_handles_db_error_gracefully(self):
         """Si la BD lanza excepción → devuelve {} sin propagarla."""
@@ -924,52 +904,6 @@ class TestWsInteract:
         types = [m["type"] for m in all_sent]
         assert "auth_ok" in types
         assert "stream_end" not in types
-
-    async def test_explore_mode_sends_exploration_actions(self):
-        """Mensaje explore_mode → se envía exploration_actions."""
-        ws = make_mock_ws(
-            receive_text_values=[
-                json.dumps(
-                    {"type": "auth", "api_key": "test-api-key-for-unit-tests-only"}
-                )
-            ],
-            receive_messages=[
-                {
-                    "type": "websocket.receive",
-                    "text": json.dumps(
-                        {
-                            "type": "explore_mode",
-                            "request_id": "req-explore",
-                            "duration_minutes": 5,
-                        }
-                    ),
-                    "bytes": None,
-                },
-                {"type": "websocket.disconnect"},
-            ],
-        )
-
-        with (
-            patch(
-                "ws_handlers.streaming.run_agent_stream",
-                make_async_gen("[emotion:curious] ¡Voy a explorar!"),
-            ),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
-            patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
-            patch(
-                "ws_handlers.streaming._load_moji_context",
-                new_callable=AsyncMock,
-                return_value={},
-            ),
-            patch(
-                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
-            ),
-        ):
-            await ws_interact(ws)
-
-        all_sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        types = [m["type"] for m in all_sent]
-        assert "exploration_actions" in types
 
     async def test_face_scan_mode_sends_face_scan_actions(self):
         """Mensaje face_scan_mode → se envía face_scan_actions."""

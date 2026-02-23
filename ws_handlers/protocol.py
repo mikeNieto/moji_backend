@@ -152,25 +152,6 @@ def make_error(
 # ── Mensajes nuevos v2.0 ─────────────────────────────────────────────────────────
 
 
-def make_exploration_actions(
-    request_id: str,
-    actions: list[dict],
-    exploration_speech: str = "",
-) -> str:
-    """
-    Instrucciones de movimiento + speech para el modo exploración autónoma.
-    {"type": "exploration_actions", "request_id": "...", "actions": [...], "exploration_speech": "..."}
-    """
-    return _to_json(
-        {
-            "type": "exploration_actions",
-            "request_id": request_id,
-            "actions": actions,
-            "exploration_speech": exploration_speech,
-        }
-    )
-
-
 def make_face_scan_actions(request_id: str, actions: list[dict]) -> str:
     """
     Secuencia de primitivas ESP32 para que Moji gire buscando personas.

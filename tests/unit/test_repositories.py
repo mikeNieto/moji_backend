@@ -3,7 +3,6 @@ Tests unitarios v2.0 — Repositorios
 
 Cubre:
   - PeopleRepository (people.py)
-  - ZonesRepository  (zones.py)
   - MemoryRepository (memory.py)
   - MediaRepository  (media.py)
 
@@ -20,7 +19,6 @@ from db import create_all_tables, drop_all_tables
 from repositories.memory import MemoryRepository
 from repositories.media import MediaRepository
 from repositories.people import PeopleRepository
-from repositories.zones import ZonesRepository
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -47,11 +45,6 @@ async def session():
 @pytest.fixture
 def people_repo(session):
     return PeopleRepository(session)
-
-
-@pytest.fixture
-def zones_repo(session):
-    return ZonesRepository(session)
 
 
 @pytest.fixture
@@ -137,98 +130,6 @@ class TestPeopleRepository:
         assert embs == []
 
 
-# ── ZonesRepository ───────────────────────────────────────────────────────────
-
-
-class TestZonesRepository:
-    async def test_create_zone(self, zones_repo):
-        z = await zones_repo.create("sala", "living_area")
-        assert z.name == "sala"
-        assert z.id is not None
-        assert z.current_moji_zone is False
-
-    async def test_get_or_create_new(self, zones_repo):
-        z, created = await zones_repo.get_or_create("cocina", "kitchen")
-        assert created is True
-
-    async def test_get_or_create_existing(self, zones_repo):
-        await zones_repo.create("ba\u00f1o", "bathroom")
-        z, created = await zones_repo.get_or_create("ba\u00f1o", "bathroom")
-        assert created is False
-
-    async def test_get_by_name(self, zones_repo):
-        await zones_repo.create("dormitorio", "bedroom")
-        z = await zones_repo.get_by_name("dormitorio")
-        assert z is not None
-        assert z.name == "dormitorio"
-
-    async def test_get_by_name_missing(self, zones_repo):
-        result = await zones_repo.get_by_name("invisible")
-        assert result is None
-
-    async def test_list_all(self, zones_repo):
-        await zones_repo.create("z1", "living_area")
-        await zones_repo.create("z2", "kitchen")
-        zones = await zones_repo.list_all()
-        assert len(zones) == 2
-
-    async def test_set_current_zone(self, zones_repo, session):
-        z1 = await zones_repo.create("sala", "living_area")
-        z2 = await zones_repo.create("cocina", "kitchen")
-        await zones_repo.set_current_zone(z1.id)
-        await session.commit()
-        current = await zones_repo.get_current_zone()
-        assert current is not None
-        assert current.name == "sala"
-        # Cambiar a z2
-        await zones_repo.set_current_zone(z2.id)
-        await session.commit()
-        current = await zones_repo.get_current_zone()
-        assert current.name == "cocina"
-
-    async def test_set_current_zone_clears_previous(self, zones_repo, session):
-        z1 = await zones_repo.create("antes", "living_area")
-        z2 = await zones_repo.create("despues", "bedroom")
-        await zones_repo.set_current_zone(z1.id)
-        await session.commit()
-        await zones_repo.set_current_zone(z2.id)
-        await session.commit()
-        # z1 ya no debe ser la zona actual
-        z1_check = await zones_repo.get_by_name("antes")
-        assert z1_check is not None
-        assert z1_check.current_moji_zone is False
-
-    async def test_add_and_get_paths(self, zones_repo, session):
-        z1 = await zones_repo.create("A", "living_area")
-        z2 = await zones_repo.create("B", "kitchen")
-        await zones_repo.add_path(z1.id, z2.id, direction_hint="norte", distance_cm=300)
-        await session.commit()
-        paths = await zones_repo.get_paths_from(z1.id)
-        assert len(paths) == 1
-        assert paths[0].to_zone_id == z2.id
-        assert paths[0].distance_cm == 300
-
-    async def test_find_path_direct(self, zones_repo, session):
-        z1 = await zones_repo.create("sala", "living_area")
-        z2 = await zones_repo.create("cocina", "kitchen")
-        await zones_repo.add_path(z1.id, z2.id, direction_hint="norte")
-        await session.commit()
-        path = await zones_repo.find_path("sala", "cocina")
-        assert len(path) == 1
-        assert path[0].to_zone_id == z2.id
-
-    async def test_find_path_no_route(self, zones_repo, session):
-        await zones_repo.create("isla", "outdoor")
-        await zones_repo.create("castillo", "outdoor")
-        await session.commit()
-        path = await zones_repo.find_path("isla", "castillo")
-        assert path == []
-
-    async def test_get_current_zone_none(self, zones_repo):
-        result = await zones_repo.get_current_zone()
-        assert result is None
-
-
 # ── MemoryRepository v2.0 ─────────────────────────────────────────────────────
 
 
@@ -292,11 +193,9 @@ class TestMemoryRepository:
         await session.flush()
         await memory_repo.save("general", "G1", importance=6)
         await memory_repo.save("person_fact", "PF1", person_id="p4", importance=7)
-        await memory_repo.save("zone_info", "Z1", importance=5)
         context = await memory_repo.get_moji_context(person_id="p4")
         assert "general" in context
         assert "person" in context
-        assert "zone_info" in context
 
     async def test_get_moji_context_no_person(self, memory_repo):
         await memory_repo.save("general", "G1", importance=6)

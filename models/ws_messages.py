@@ -6,14 +6,12 @@ v2.0 — Moji Amigo Familiar
 Mensajes del cliente (Android → Backend):
   AuthMessage, InteractionStartMessage, AudioEndMessage,
   TextMessage, ImageMessage, VideoMessage,
-  ExploreModeMessage, FaceScanModeMessage,
-  PersonDetectedMessage, ZoneUpdateMessage
+  FaceScanModeMessage, PersonDetectedMessage
 
 Mensajes del servidor (Backend → Android):
   AuthOkMessage, EmotionMessage,
   TextChunkMessage, ResponseMetaMessage, StreamEndMessage,
-  WsErrorMessage, ExplorationActionsMessage,
-  FaceScanActionsMessage, LowBatteryAlertMessage
+  WsErrorMessage, FaceScanActionsMessage, LowBatteryAlertMessage
 """
 
 from typing import Any, Literal
@@ -75,14 +73,6 @@ class VideoMessage(BaseModel):
     data: str  # base64 MP4
 
 
-class ExploreModeMessage(BaseModel):
-    """Android indica que Moji debe entrar en modo exploración autónoma."""
-
-    type: Literal["explore_mode"]
-    request_id: str
-    duration_minutes: int = Field(5, ge=1, le=60)
-
-
 class FaceScanModeMessage(BaseModel):
     """Android inicia escaneo facial activo — ESP32 gira buscando personas."""
 
@@ -100,16 +90,6 @@ class PersonDetectedMessage(BaseModel):
     confidence: float = Field(0.0, ge=0.0, le=1.0)
 
 
-class ZoneUpdateMessage(BaseModel):
-    """Android informa de la zona en la que se encuentra Moji."""
-
-    type: Literal["zone_update"]
-    request_id: str
-    zone_name: str
-    category: str = "unknown"  # kitchen | living | bedroom | bathroom | unknown
-    action: Literal["enter", "leave", "discover"]
-
-
 # Union discriminada de mensajes del cliente
 ClientMessage = (
     AuthMessage
@@ -118,10 +98,8 @@ ClientMessage = (
     | TextMessage
     | ImageMessage
     | VideoMessage
-    | ExploreModeMessage
     | FaceScanModeMessage
     | PersonDetectedMessage
-    | ZoneUpdateMessage
 )
 
 
@@ -200,18 +178,6 @@ class WsErrorMessage(BaseModel):
     recoverable: bool = False
 
 
-class ExplorationActionsMessage(BaseModel):
-    """
-    Backend → Android: instrucciones de movimiento + speech para exploración autónoma.
-    Generadas por el LLM cuando Moji entra en `explore_mode`.
-    """
-
-    type: Literal["exploration_actions"] = "exploration_actions"
-    request_id: str
-    actions: list[dict[str, Any]] = Field(default_factory=list)
-    exploration_speech: str = ""  # texto curioso que Moji dice mientras explora
-
-
 class FaceScanActionsMessage(BaseModel):
     """
     Backend → Android: secuencia de primitivas ESP32 para que Moji gire
@@ -241,7 +207,6 @@ ServerMessage = (
     | ResponseMetaMessage
     | StreamEndMessage
     | WsErrorMessage
-    | ExplorationActionsMessage
     | FaceScanActionsMessage
     | LowBatteryAlertMessage
 )

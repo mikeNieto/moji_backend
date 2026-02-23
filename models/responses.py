@@ -5,7 +5,7 @@ Sin `from typing import` — tipos nativos Python 3.12.
 v2.0 — Solo 2 endpoints REST: GET /api/health y GET /api/restore.
   - Eliminadas: UserResponse, UserListResponse, FaceRegisterResponse,
                 MemoryListResponse, MemorySaveResponse, MemoryDeleteResponse
-  - Nuevas: RestorePersonResponse, RestoreZoneResponse,
+  - Nuevas: RestorePersonResponse,
             RestoreMemoryResponse, RestoreResponse
 """
 
@@ -53,37 +53,15 @@ class RestorePersonResponse(BaseModel):
     )
 
 
-class RestoreZonePathResponse(BaseModel):
-    """Camino entre dos zonas del mapa mental."""
-
-    to_zone_id: int
-    direction_hint: str = ""
-    distance_cm: int | None = None
-
-
-class RestoreZoneResponse(BaseModel):
-    """Zona del mapa mental de la casa."""
-
-    id: int | None = None
-    name: str
-    category: str  # kitchen | living_area | bedroom | bathroom | outdoor | unknown
-    description: str = ""
-    known_since: datetime | None = None
-    accessible: bool = True
-    is_current: bool = False
-    paths: list[RestoreZonePathResponse] = Field(default_factory=list)
-
-
 class RestoreMemoryResponse(BaseModel):
     """Recuerdo general de Moji."""
 
     id: int | None = None
-    memory_type: str  # experience | zone_info | person_fact | general
+    memory_type: str  # experience | person_fact | general
     content: str
     importance: int = Field(ge=1, le=10)
     created_at: datetime | None = None
     person_id: str | None = None
-    zone_id: int | None = None
 
 
 class RestoreResponse(BaseModel):
@@ -93,5 +71,4 @@ class RestoreResponse(BaseModel):
     """
 
     people: list[RestorePersonResponse] = Field(default_factory=list)
-    zones: list[RestoreZoneResponse] = Field(default_factory=list)
     general_memories: list[RestoreMemoryResponse] = Field(default_factory=list)

@@ -2,7 +2,7 @@
 
 **Versión:** 2.0  
 **Fecha:** Febrero 2026  
-**Estado:** Transformación completa: Moji pasa de asistente de tareas a amigo familiar curioso y empático. Nuevo modelo de personas (sin usuarios), múltiples embeddings faciales, mapa mental de la casa (zonas/grafos), modo exploración autónoma, compactación de memorias, acciones ESP32 con primitivas hardware, y reducción de API REST a 2 endpoints.
+**Estado:** Transformación completa: Moji pasa de asistente de tareas a amigo familiar curioso y empático. Nuevo modelo de personas (sin usuarios), múltiples embeddings faciales, compactación de memorias, acciones ESP32 con primitivas hardware, y reducción de API REST a 2 endpoints.
 
 ---
 
@@ -21,7 +21,7 @@
 11. [Plan de Despliegue](#11-plan-de-despliegue)
 12. [Métricas y Monitoreo](#12-métricas-y-monitoreo)
 
-> **Resumen de cambios principales v2.0:** Moji ya no es un asistente. Es un amigo familiar curioso y ético. No hay "usuarios" — hay "personas". Moji explora la casa autónomamente, aprende zonas, guarda experiencias y memorias propias, reconoce caras con múltiples embeddings, y protege activamente su integridad. La API REST se reduce a solo 2 endpoints esenciales. Todo el flujo de personas y embeddings ocurre por WebSocket.
+> **Resumen de cambios principales v2.0:** Moji ya no es un asistente. Es un amigo familiar curioso y ético. No hay "usuarios" — hay "personas". Moji guarda experiencias y memorias propias, reconoce caras con múltiples embeddings, y protege activamente su integridad. La API REST se reduce a solo 2 endpoints esenciales. Todo el flujo de personas y embeddings ocurre por WebSocket.
 
 ---
 
@@ -33,17 +33,15 @@ Moji ya **no es un asistente de tareas**. Moji es un **amigo familiar curioso, e
 
 **¿Quién es Moji?**
 - Un amigo curioso que quiere conocer a cada miembro de la familia, sus gustos, sus rutinas y sus historias
-- Conversador natural: responde preguntas, ayuda en lo que puede, y también toma iniciativa para explorar y hablar
+- Conversador natural: responde preguntas, ayuda en lo que puede, y también toma iniciativa para hablar
 - Responsable con la información: **nunca guarda datos privados** (contraseñas, finanzas, datos médicos sensibles), nunca escucha conversaciones que no son para él
 - Protector de su propia integridad: no se deja dañar, no mora mojarse, avisa cuando su batería se agota
 - **La ética siempre va antes que la acción**: se niega amablemente a cualquier orden que implique daño, iegalidad o espionaje
 
 **¿Qué hace Moji?**
 - Conversa con la familia y aprende sobre cada persona con el tiempo
-- Explora la casa autónomamente (tras período de inactividad) y mapea zonas
 - Reconoce a las personas que ya conoce y pregunta por las que no
 - Guarda memorias y experiencias vividas con la familia (no datos privados)
-- Recuerda dónde están las zonas de la casa y puede navegar hacia ellas
 - Cuida su batería e informa persistentemente cuando necesita cargarse
 - Reacciona a sus alrededores: escaleras, obstáculos, peticiones peligrosas
 
@@ -53,8 +51,6 @@ Sistema robótico doméstico con capacidades de:
 - Interacción multimodal (voz, visión, texto)
 - **Reconocimiento de personas con múltiples embeddings faciales** (distintos días y condiciones de luz)
 - **Memoria de experiencias** propias de Moji (no solo memoria de usuario)
-- **Mapa mental de la casa** como grafo de zonas con rutas de navegación
-- **Exploración autónoma** tras períodos de inactividad
 - Control de movimiento y sensores ambientales
 - Interfaz visual expresiva mediante emojis animados
 - Procesamiento inteligente mediante LLM multimodal
@@ -62,12 +58,10 @@ Sistema robótico doméstico con capacidades de:
 ### 1.3 Objetivos Principales
 
 1. **Amistad Natural**: Moji se preocupa por conocer a la familia; las conversaciones fluyen libremente
-2. **Memoria Vivida**: Moji recuerda experiencias, lugares y momentos con la familia, no solo preferencias
-3. **Curiosidad Activa**: Moji no espera siempre a que le hablen — explora y busca personas de forma autónoma
-4. **Navegación con Aprendizaje**: Moji conoce la casa gradualmente, pregunta cuando no sabe, y deduce cuando puede
-5. **Movilidad Segura**: Navegación segura con detección de obstáculos; Moji no pone en riesgo su integridad ni la de nadie
-6. **Expresividad Visual**: Sistema de emociones mediante OpenMoji
-7. **Bajo Costo Operacional**: Gemini Flash Lite (muy económico), TTS del sistema Android (sin costo)
+2. **Memoria Vivida**: Moji recuerda experiencias y momentos con la familia, no solo preferencias
+3. **Movilidad Segura**: Navegación segura con detección de obstáculos; Moji no pone en riesgo su integridad ni la de nadie
+4. **Expresividad Visual**: Sistema de emociones mediante OpenMoji
+5. **Bajo Costo Operacional**: Gemini Flash Lite (muy económico), TTS del sistema Android (sin costo)
 
 ### 1.4 Stack Tecnológico
 
@@ -110,14 +104,13 @@ graph TB
         TTS_ANDROID[Android TextToSpeech<br/>TTS del Sistema]
         WS_CLIENT[WebSocket Client<br/>Streaming]
         API_CLIENT[REST API Client<br/>Solo 2 endpoints]
-        EXPLORE_TIMER[Exploration Timer<br/>5-10 min inactividad]
     end
     
     subgraph "Backend Python/FastAPI + Docker Compose"
         WS_SERVER[WebSocket Server<br/>Streaming<br/>:9393]
         GATEWAY[API Gateway<br/>REST: /api/health + /api/restore]
         GEMINI[Gemini Flash Lite<br/>Multimodal: audio+imagen+video]
-        MEM[Memory Store<br/>Experiencias + Zonas + Personas]
+        MEM[Memory Store<br/>Experiencias + Personas]
         EXPR[Expression Manager<br/>Emoción vía LLM]
         NGINX[Nginx<br/>Reverse Proxy TLS]
         COMPACT[Memory Compaction<br/>Task asíncrona post-interacción]
@@ -131,7 +124,6 @@ graph TB
     end
     
     U -->|Voz| WW
-    EXPLORE_TIMER -->|Inactividad 5-10min| WS_CLIENT
     WW -->|Wake Word OK| CAM
     WW -->|Wake Word OK| AR
     CAM -->|Frames en tiempo real<br/>Cámara frontal| FR_ANDROID
@@ -165,7 +157,7 @@ graph TB
 
 **Ya no hay "usuarios" — solo hay "personas".** Moji puede encontrarse con alguien de dos formas:
 1. **La persona activa a Moji** con el wake word "Hey Moji"
-2. **Moji toma la iniciativa** — después de un período de inactividad (5-10 minutos), Android activa el modo exploración autónoma
+2. **Moji toma la iniciativa** si detecta una persona en su campo de visión
 
 **Flujo 1 → Wake word activa a Moji:**
 
@@ -223,74 +215,9 @@ sequenceDiagram
     Note over A: Estado LISTENING (👂) — modo escucha continua 2 min
 ```
 
-### 2.2b Flujo de Exploración Autónoma (Nuevo v2.0)
-
-Después de un período configurable de inactividad (5-10 minutos), **Android activa el modo exploración** y envía un mensaje WS `explore_mode` al backend. Moji decide qué hacer: explorar una zona desconocida, buscar personas, o simplemente vagar.
-
-**Reglas de exploración:**
-- Si encuentra una persona: intenta conversar. Si la persona está ocupada → Moji se aleja amigablemente y entra en modo quieto 10 minutos más
-- Si llega a una zona desconocida: toma una foto, intenta deducir el nombre (cocina, sala, etc.) o pregunta a la persona más cercana
-- Las zonas exploradas se guardan en el mapa mental de Moji
-
-```mermaid
-sequenceDiagram
-    participant A as App Android
-    participant B as Backend FastAPI
-    participant FR as FaceRecognition
-    participant E as ESP32
-
-    Note over A: 5-10 min sin actividad → EXPLORE_TIMER dispara
-    A->>B: WS: explore_mode {duration_minutes: 10}
-    Note over B: LLM genera plan de exploración curioso
-    B-->>A: WS: exploration_actions {actions[], exploration_speech}
-    A->>A: TTS reproduce "Voy a explorar un poco..."
-    A->>E: BLE: ejecutar secuencia de movimiento
-
-    loop Durante exploración
-        alt Persona detectada en cámara
-            FR->>A: Rostro detectado
-            A->>B: WS: person_detected {known, person_id, confidence}
-            alt Persona conocida
-                B-->>A: WS Stream: saludo + propuesta de conversación
-                A->>A: TTS "¡Hola [nombre]! ¿Tienes un momento para hablar?"
-            else Persona desconocida
-                B-->>A: WS Stream: "¡Hola! No creo conocerte. ¿Cómo te llamas?"
-            end
-            Note over A: Si persona responde → flujo normal de conversación
-            Note over A: Si persona dice que está ocupada → Moji se aleja, quieto 10 min
-        else Zona desconocida detectada
-            A->>B: WS: zone_update {zone_name="?", action="discover"}
-            B-->>A: WS Stream: capture_request (photo)
-            A->>A: Toma foto de la zona
-            A->>B: WS: image con foto de zona
-            Note right of B: Gemini analiza foto → emite [zone_learn:NOMBRE:CATEGORIA:desc]
-            B->>B: Guarda zona en DB
-            B-->>A: WS Stream: "Esto parece una cocina..." (si hay persona cercana, pregunta)
-        end
-        
-        alt Wake word activado durante exploración
-            Note over A: Exploración se interrumpe INMEDIATAMENTE
-            Note over A: Moji atiende lo que le pidan
-        end
-    end
-```
-
-### 2.2c Escenario: Moji en Modo Quieto
-
-Si durante la exploración una persona le dice que está ocupada, o si ha explorado suficiente:
-
-```
-1. Moji se aleja muy amigablemente: "¡Claro! No te interrumpo más. Si me necesitas, aquí estaré"
-2. Moji navega a su zona de reposo (si la conoce) o se queda donde está
-3. Estado IDLE durante 10 minutos (no explora, solo espera wake word)
-4. Después de 10 minutos → puede volver a explorar o seguir quieto
-```
-
-
-
 ### 2.3 Flujo de Interacción General (Post-Encuentro)
 
-Una vez que Moji inicia conversación (por wake word o por exploración), queda en **modo de escucha continua durante 2 minutos** (`CONVERSATION_KEEP_ALIVE_MS` = 120000ms). Durante este período:
+Una vez que Moji inicia conversación (por wake word o detección de persona), queda en **modo de escucha continua durante 2 minutos** (`CONVERSATION_KEEP_ALIVE_MS` = 120000ms). Durante este período:
 - La persona puede seguir hablando sin repetir el wake word
 - Si en medio de cualquier acción le hablan, Moji **interrumpe lo que hace y atiende**
 - Cualquier petición que implique daño, ilegalidad o espionaje es rechazada amablemente
@@ -308,7 +235,7 @@ sequenceDiagram
     A->>A: Graba Audio (hasta silencio 2s o timeout 10s)
 
     Note over A: Estado THINKING (🤔)
-    A->>B: WS: audio binario + person_id + zona_actual + contexto sensores
+    A->>B: WS: audio binario + person_id + contexto sensores
 
     B->>B: Gemini recibe audio (multimodal)
     B->>B: Gemini razona con memorias, experiencias e historial
@@ -334,7 +261,6 @@ sequenceDiagram
     B-->>A: WS Stream: stream_end
     Note over A: Estado LISTENING (👂) — 2 min más de escucha
     Note over A: Tras 2 min de inactividad → Estado IDLE (🤖)
-    Note over A: Tras IDLE_INACTIVITY_MS (5-10 min) → EXPLORE_TIMER dispara
 ```
 
 **Reglas de interrupción:**
@@ -410,12 +336,11 @@ graph TB
     subgraph "Capa de Datos"
         PEOPLE_REPO[repositories/people.py<br/>People + FaceEmbeddings CRUD]
         MEM_REPO[repositories/memory.py<br/>Experiencias + Compactación + Privacidad]
-        ZONES_REPO[repositories/zones.py<br/>Zonas + Paths + Navegación BFS]
         MEDIA_REPO[repositories/media.py<br/>Archivos temporales]
     end
     
     subgraph "Capa de Infraestructura"
-        DB[(SQLite DB<br/>people, face_embeddings<br/>memories, zones, zone_paths<br/>conversation_history)]
+        DB[(SQLite DB<br/>people, face_embeddings<br/>memories<br/>conversation_history)]
         FILES[(/media/<br/>audio temporal, images)]
     end
     
@@ -431,12 +356,10 @@ graph TB
     AGENT_SERVICE --> HISTORY_SERVICE
     AGENT_SERVICE --> MEM_REPO
     AGENT_SERVICE --> PEOPLE_REPO
-    AGENT_SERVICE --> ZONES_REPO
     AGENT_SERVICE --> COMPACT_SERVICE
 
     MEM_REPO --> DB
     PEOPLE_REPO --> DB
-    ZONES_REPO --> DB
     MEDIA_REPO --> FILES
 ```
 
@@ -457,19 +380,17 @@ backend/
 ├── ws_handlers/
 │   ├── streaming.py            # WebSocket handler principal (interacción de voz)
 │   │                           #   Parser de tags: [emotion:] [emojis:] [actions:]
-│   │                           #   [memory:] [person_name:] [zone_learn:]
+│   │                           #   [memory:] [person_name:]
 │   ├── protocol.py             # Protocolo de mensajes WebSocket
-│   │                           #   Enruta: explore_mode, face_scan_mode,
-│   │                           #           person_detected, zone_update
+│   │                           #   Enruta: face_scan_mode, person_detected
 │   └── auth.py                 # Autenticación WebSocket (API Key en handshake)
 ├── routers/
 │   ├── health.py               # GET /api/health
 │   └── restore.py              # GET /api/restore (restauración completa a Android)
 ├── services/
 │   ├── agent.py                # LangChain Deep Agent — orquesta la conversación
-│   │                           #   System prompt: identidad amigo familiar + tags nuevos
-│   │                           #   Inyecta: memorias de Moji + persona actual + zona actual
-│   │                           #   Manejo especial si hay face_embedding en mensaje
+│   │                           #   System prompt: identidad amigo familiar + tags
+│   │                           #   Inyecta: memorias de Moji + persona actual
 │   ├── gemini.py               # Inicialización y configuración del modelo Gemini
 │   ├── history.py              # Historial de conversación por sesión
 │   │                           #   Compactación cada 20 mensajes (sin user_id)
@@ -488,9 +409,6 @@ backend/
 │   │                           #   add_embedding, list_embeddings_for_person
 │   ├── memory.py               # CRUD memorias + filtro de privacidad
 │   │                           #   get_moji_context() → memorias generales + experiencias
-│   ├── zones.py                # CRUD zonas + rutas (grafo de la casa)
-│   │                           #   find_path(from_zone, to_zone) → BFS
-│   │                           #   set_current_zone(zone_id)
 │   └── media.py                # Gestión de archivos temporales
 ├── models/
 │   ├── requests.py             # Modelos Pydantic request REST
@@ -517,7 +435,7 @@ backend/
 
 ### 3.3 Canal Principal: WebSocket `/ws/interact`
 
-Canal único de interacción bidireccional en tiempo real. Maneja conversaciones normales, exploración autónoma, escaneo facial, actualizaciones de zona y alertas.
+Canal único de interacción bidireccional en tiempo real. Maneja conversaciones normales, escaneo facial y alertas.
 
 #### Conexión WebSocket
 
@@ -549,7 +467,6 @@ Keepalive: Ping/Pong cada 30s
   "face_confidence": 0.87,
   "face_embedding": null,
   "context": {
-    "current_zone": "sala",
     "battery_robot": 75,
     "battery_phone": 82,
     "sensors": {}
@@ -561,11 +478,11 @@ Keepalive: Ping/Pong cada 30s
 // 4. Fin de audio
 {"type": "audio_end", "request_id": "uuid-v4"}
 
-// 5. Imagen (foto de zona o contexto visual)
+// 5. Imagen (foto de contexto visual)
 {
   "type": "image",
   "request_id": "uuid-v4",
-  "purpose": "context",           // "context" | "zone_discovery"
+  "purpose": "context",
   "data": "<base64-jpeg>"
 }
 
@@ -585,19 +502,10 @@ Keepalive: Ping/Pong cada 30s
   "person_id": "person_juan_abc"
 }
 
-// 8. NUEVO: Modo exploración autónoma
-// Android activa tras IDLE_INACTIVITY_MS (5-10 min) sin actividad
-{
-  "type": "explore_mode",
-  "request_id": "uuid-v4",
-  "duration_minutes": 10,
-  "current_zone": "sala"
-}
-
-// 9. NUEVO: Escaneo facial activo
+// 8. NUEVO: Escaneo facial activo
 {"type": "face_scan_mode", "request_id": "uuid-v4"}
 
-// 10. NUEVO: Persona detectada por la cámara
+// 9. NUEVO: Persona detectada por la cámara
 {
   "type": "person_detected",
   "request_id": "uuid-v4",
@@ -607,16 +515,7 @@ Keepalive: Ping/Pong cada 30s
   "face_embedding": "<base64>"    // Embedding 128D para registrar si es desconocida
 }
 
-// 11. NUEVO: Actualización de zona
-{
-  "type": "zone_update",
-  "request_id": "uuid-v4",
-  "zone_name": "cocina",
-  "category": "kitchen",          // kitchen|living|bedroom|bathroom|unknown
-  "action": "enter"               // enter | leave | discover
-}
-
-// 12. Alerta de batería baja
+// 10. Alerta de batería baja
 {
   "type": "battery_alert",
   "request_id": "uuid-v4",
@@ -695,18 +594,7 @@ Keepalive: Ping/Pong cada 30s
   ]
 }
 
-// 7. NUEVO: Acciones de exploración autónoma
-{
-  "type": "exploration_actions",
-  "request_id": "uuid-v4",
-  "exploration_speech": "Voy a explorar el pasillo que nunca he visto bien...",
-  "actions": [
-    {"type": "move_forward_cm", "cm": 100, "speed": 30, "duration_ms": 2000},
-    {"type": "turn_right_deg", "degrees": 90, "speed": 25, "duration_ms": 1200}
-  ]
-}
-
-// 8. NUEVO: Acciones de escaneo facial (ESP32 gira buscando caras)
+// 7. NUEVO: Acciones de escaneo facial (ESP32 gira buscando caras)
 {
   "type": "face_scan_actions",
   "request_id": "uuid-v4",
@@ -746,21 +634,16 @@ flowchart TD
     TYPE -->|video| MEDIA
     TYPE -->|text| MEDIA
 
-    TYPE -->|explore_mode| EXPLORE_SVC[ExplorationService.generate_plan\ncombinar zona actual + LLM]
-    TYPE -->|face_scan_mode| SCAN_SVC[ExplorationService.face_scan_actions\ngenerar giro 360 + escaneo]
+    TYPE -->|face_scan_mode| SCAN_SVC[face_scan_actions\ngenerar giro 360 + escaneo]
     TYPE -->|person_detected| PERSON_SVC[PeopleService.handle_detected\nbuscar embedding DB → identificar/registrar]
-    TYPE -->|zone_update| ZONE_SVC[ZoneService.update_current_zone\nactualizar zona activa en DB]
     TYPE -->|battery_alert| BAT_SVC[Enviar low_battery_alert + ajustar plan]
 
     BUFFER --> TYPE
 
-    EXPLORE_SVC --> STREAM_EXPLORE[WS→ exploration_actions]
     SCAN_SVC --> STREAM_SCAN[WS→ face_scan_actions]
-    PERSON_SVC --> STREAM_PERSON[WS→ person_registered / emotion]
-    ZONE_SVC --> ZONE_OK[OK silencioso]
     BAT_SVC --> STREAM_BAT[WS→ low_battery_alert]
 
-    MEDIA --> LOAD_CTX[Cargar contexto:\n persona actual + zona actual +\n memorias Moji + historial sesión]
+    MEDIA --> LOAD_CTX[Cargar contexto:\n persona actual +\n memorias Moji + historial sesión]
     LOAD_CTX --> LLM[Gemini Flash Lite\nPrompt v2.0: amigo familiar\n+ ética + tags v2.0]
 
     LLM --> PARSE_TAGS[Parsear tags del output stream]
@@ -768,7 +651,6 @@ flowchart TD
     PARSE_TAGS -->|texto| STREAM_TEXT[WS→ text_chunk progresivo]
     PARSE_TAGS -->|person_name tag| RESOLVE_PERSON[Vincular person_id en sesión]
     PARSE_TAGS -->|memory tag| SAVE_MEM_BG[asyncio.create_task\nguardar memoria + filtro privacidad]
-    PARSE_TAGS -->|zone_learn tag| SAVE_ZONE_BG[asyncio.create_task\nguardar zona nueva en DB]
     PARSE_TAGS -->|acciones| BUILD_META[Construir response_meta\nprimitivas ESP32]
 
     BUILD_META --> STREAM_META[WS→ response_meta]
@@ -787,7 +669,6 @@ flowchart TD
 | `[emotion:TAG]` | `[emotion:happy]` | Emoción de la respuesta (primer token) |
 | `[memory:TYPE:content]` | `[memory:fact:Le gusta el fútbol]` | Memoria a persistir (background) |
 | `[person_name:NAME]` | `[person_name:Juan]` | Nombre deducido del embedding presente |
-| `[zone_learn:NAME:CAT:desc]` | `[zone_learn:cocina:kitchen:...]` | Nueva zona detectada |
 
 Los tags son **eliminados del texto** antes de enviar `text_chunk` al cliente.
 
@@ -801,10 +682,7 @@ El backend utiliza **LangChain Deep Agents** (`deepagents`) como *agent harness*
 | Tool / Extensión | Descripción | Estado |
 |-----------------|-------------|--------|
 | `get_person_context` | Carga nombre, notas y memorias de la persona actualmente en cámara | ✅ Implementado |
-| `get_zone_context` | Obtiene información de la zona actual y adyacentes del mapa mental | ✅ Implementado |
 | `save_memory` | Persiste un dato relevante en la tabla `memories` (fondo) | ✅ Implementado |
-| `learn_zone` | Registra o actualiza una zona en el mapa (tras confirmación verbal) | ✅ Implementado |
-| `find_path` | BFS/Dijkstra sobre grafo `zones`+`zone_paths` para navegación | ✅ Implementado |
 | MCP | Model Context Protocol — acceso estandarizado a servicios externos | Planificado |
 | Subagentes | Delegación a agentes especializados vía tool `task` de deepagents | Planificado |
 
@@ -816,7 +694,7 @@ from deepagents import create_deep_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from .config import settings
 from .prompts import SYSTEM_PROMPT  # Prompt v2.0 (amigo familiar)
-from .tools import get_person_context, get_zone_context, save_memory, learn_zone, find_path
+from .tools import get_person_context, save_memory
 
 # Modelo base: Gemini Flash Lite
 model = ChatGoogleGenerativeAI(
@@ -827,7 +705,7 @@ model = ChatGoogleGenerativeAI(
 
 agent = create_deep_agent(
     model=model,
-    tools=[get_person_context, get_zone_context, save_memory, learn_zone, find_path],
+    tools=[get_person_context, save_memory],
     system_prompt=SYSTEM_PROMPT,
 )
 ```
@@ -845,7 +723,7 @@ El agente usa **LangGraph** como runtime (incluido en `deepagents`), lo que apor
 
 ### 3.6 Modelo de Datos y Esquema de Base de Datos
 
-La base de datos SQLite gestiona todo el conocimiento persistente de Moji. El modelo central pasa de "usuarios de app" a "personas de la familia", con mapa mental de zonas y embeddings faciales por separado.
+La base de datos SQLite gestiona todo el conocimiento persistente de Moji. El modelo central pasa de "usuarios de app" a "personas de la familia", con embeddings faciales múltiples y memorias propias de Moji.
 
 #### Esquema completo (v2.0)
 
@@ -874,24 +752,6 @@ Tabla: memories
 - importance: INTEGER DEFAULT 5         -- 1-10 (umbral de guardado: >3)
 - timestamp: TIMESTAMP DEFAULT NOW
 - expires_at: TIMESTAMP                  -- nullable; None = permanente
-- zone_id: INTEGER FK → zones.id (nullable)  -- zona donde ocurrió (si aplica)
-
-Tabla: zones
-- id: INTEGER PRIMARY KEY AUTOINCREMENT
-- name: VARCHAR(100) UNIQUE              -- 'cocina', 'salón', 'pasillo_norte'
-- category: VARCHAR(50)                  -- 'kitchen', 'living_room', 'hallway', 'bedroom', 'outdoor', 'unknown'
-- description: TEXT                      -- descripción libre
-- known_since: TIMESTAMP DEFAULT NOW
-- accessible: BOOLEAN DEFAULT TRUE      -- False = zona bloqueada/restringida
-- is_current: BOOLEAN DEFAULT FALSE     -- True = zona donde está Moji ahora
-
-Tabla: zone_paths
-- id: INTEGER PRIMARY KEY AUTOINCREMENT
-- from_zone_id: INTEGER FK → zones.id ON DELETE CASCADE
-- to_zone_id: INTEGER FK → zones.id ON DELETE CASCADE
-- direction_hint: VARCHAR(20)            -- 'north', 'south', 'east', 'west', 'up', 'down'
-- distance_cm: INTEGER                   -- distancia aproximada en cm
-- UNIQUE(from_zone_id, to_zone_id)
 
 Tabla: conversation_history
 - id: INTEGER PRIMARY KEY AUTOINCREMENT
@@ -909,7 +769,6 @@ Tabla: conversation_history
 CREATE INDEX idx_face_embeddings_person  ON face_embeddings(person_id);
 CREATE INDEX idx_memories_person         ON memories(person_id);
 CREATE INDEX idx_memories_importance     ON memories(importance DESC);
-CREATE INDEX idx_zone_paths_from         ON zone_paths(from_zone_id);
 CREATE INDEX idx_conv_history_session    ON conversation_history(session_id, message_index);
 ```
 
@@ -934,7 +793,7 @@ PERMITIDO guardar:
   - Nombre de la persona ✅
   - Gustos y preferencias ✅
   - Recuerdos de eventos familiares no sensibles ✅
-  - Observaciones sobre la casa / zonas ✅
+  - Observaciones sobre la casa ✅
 
 NUNCA guardar (filtrado automáticamente):
   - Contraseñas o PINs ❌
@@ -961,117 +820,17 @@ graph LR
     E --> G[Top 5 memorias filtradas\nimportance > 3 ORDER BY timestamp DESC]
     F --> G
 
-    G --> H[Inyectar contexto en LLM:\nzona actual + persona + memorias + historial]
+    G --> H[Inyectar contexto en LLM:\npersona + memorias + historial]
     D --> H
 
     H --> I[LLM genera respuesta con tags v2.0]
-    I --> J[Parsear tags en background:\nmemory / person_name / zone_learn]
+    I --> J[Parsear tags en background:\nmemory / person_name]
     J --> K[Guardar en BD de forma asíncrona]
     K --> L[Comprobar threshold compactación]
 ```
 
-### 3.7 Modo de Exploración Autónoma
 
-Cuando Android detecta inactividad (configurable, 5-10 min), envía `explore_mode` al backend. Moji toma la iniciativa de explorar el entorno.
-
-#### Flujo de Exploración
-
-```mermaid
-sequenceDiagram
-    participant A as Android
-    participant B as Backend
-    participant DB as SQLite
-
-    A->>B: WS explore_mode {duration_hint: 300}
-    B->>DB: SELECT zona actual + zonas conocidas + paths
-    B->>B: ExplorationService.generate_plan(context)
-    B-->>A: WS exploration_actions\n{speech: "Voy a explorar...", actions: [primitivas ESP32]}
-
-    loop mientras explora (Android controla duración)
-        A->>B: WS zone_update {zone_name: "pasillo"}
-        B->>DB: UPDATE zones SET is_current=TRUE WHERE name=...
-        opt nueva zona
-            A->>B: WS zone_update {zone_name: "cuarto_desconocido", is_new: true}
-            B->>B: LLM deduce categoría desde descripción/foto
-            B->>DB: INSERT INTO zones + zone_paths
-            B-->>A: WS response_meta {speech: "¡Vaya, aquí hay una habitación nueva!"}
-        end
-        opt persona detectada durante exploración
-            A->>B: WS face_scan_mode
-            B-->>A: WS face_scan_actions {actions: [giro 360, capturas]}
-        end
-    end
-    A->>B: WS text {content: "fin exploración"}
-    B-->>A: WS stream → text_chunk + stream_end
-```
-
-#### ExplorationService
-
-```python
-# services/exploration.py
-class ExplorationService:
-    async def generate_plan(self, current_zone: Zone, known_zones: list[Zone]) -> dict:
-        """Genera speech + acciones ESP32 para iniciar exploración."""
-        # 1. Seleccionar zona objetivo no visitada recientemente
-        # 2. find_path(current_zone, target_zone) via ZoneService
-        # 3. LLM genera frase de anuncio
-        # 4. Traducir path a primitivas ESP32
-        ...
-
-    async def face_scan_actions(self) -> dict:
-        """Genera secuencia de giro y capturas para escaneo facial 360°."""
-        # turn_right_deg(90) × 4 con capture_request en cada posición
-        ...
-```
-
-### 3.8 Sistema de Zonas y Mapa Mental
-
-El mapa mental es un **grafo no dirigido** en BDD: `zones` (nodos) + `zone_paths` (aristas).
-
-#### Navegación entre Zonas
-
-```python
-# services/zones.py
-import heapq
-
-class ZoneService:
-    async def find_path(self, from_zone: str, to_zone: str) -> list[dict]:
-        """
-        Dijkstra sobre zone_paths para obtener la ruta más corta.
-        Retorna lista de primitivas ESP32 para recorrer el camino.
-        """
-        graph = await self._load_graph()
-        path = self._dijkstra(graph, from_zone, to_zone)
-        return self._path_to_primitives(path)
-
-    def _path_to_primitives(self, path: list[ZonePath]) -> list[dict]:
-        """Convierte aristas del grafo en comandos ESP32."""
-        primitives = []
-        for edge in path:
-            if edge.direction_hint in ("north", "south", "east", "west"):
-                primitives.append({
-                    "command": "move_forward_cm",
-                    "params": {"distance_cm": edge.distance_cm}
-                })
-            # Añadir giros según diferencia de dirección entre aristas consecutivas
-        return primitives
-```
-
-#### Formato del grafo en BD
-
-```
-zones:                          zone_paths:
-┌──────────┬──────────┐         ┌───────────┬──────────┬───────────┬────────────┐
-│ cocina   │ kitchen  │         │ from      │ to       │ direction │ dist_cm    │
-│ salón    │ living   │◄────────│ salón     │ cocina   │ east      │ 350        │
-│ pasillo  │ hallway  │         │ pasillo   │ salón    │ south     │ 200        │
-│ garage   │ outdoor  │         │ pasillo   │ garage   │ west      │ 150        │
-└──────────┴──────────┘         └───────────┴──────────┴───────────┴────────────┘
-```
-
-
-
-### 3.9 Sistema de Emociones Dirigidas por LLM
+### 3.7 Sistema de Emociones Dirigidas por LLM
 
 #### Estrategia: Emotion Tags en el Output Stream del LLM
 
@@ -1124,9 +883,6 @@ TAGS EN TU RESPUESTA (en este orden, ANTES del texto):
 2. [person_name:NOMBRE] — si hay un embedding facial y puedes deducir quién es.
 3. [memory:TYPE:contenido] — si quieres recordar algo.
    Types: fact, preference, event, observation
-4. [zone_learn:nombre:categoría:descripción] — si aprendes una zona nueva.
-   Categorías: kitchen, living_room, hallway, bedroom, outdoor, unknown
-
 Ejemplo completo:
 [emotion:curious][memory:fact:Le gusta el fútbol] ¡Hola Juan! ¿Viste el partido
 de anoche? Me dijiste la semana pasada que era tu equipo favorito.
@@ -2903,22 +2659,19 @@ Mensajes del cliente (v2.0):
 - text: Texto directo
 - image: Imagen en base64
 - video: Video en base64
-- explore_mode: Iniciar modo exploración autónoma
 - face_scan_mode: Solicitar escaneo facial 360°
 - person_detected: Persona detectada con embedding
-- zone_update: Actualizar zona actual de Moji
 - battery_alert: Alerta de batería baja
 
 Mensajes del servidor (v2.0):
 - auth_ok: Confirmación de autenticación
 - person_registered: Persona registrada/identificada
-- exploration_actions: Plan de exploración (speech + primitivas ESP32)
 - face_scan_actions: Secuencia de giro + capturas
 - emotion: Emoción del LLM (enviado primero)
 - text_chunk: Fragmento de texto (streaming)
 - capture_request: Solicitud de captura
 - response_meta: Metadata (emojis + acciones ESP32 + person_name)
-- low_battery_alert: Instrucción de detener exploración / ir a base
+- low_battery_alert: Instrucción de ir a base de carga
 - stream_end: Fin de streaming
 - error: Error con código y mensaje
 
@@ -2952,8 +2705,7 @@ GET /api/restore
     {
       "people": [...],          // lista people con person_id, name, last_seen
       "face_embeddings": [...], // embeddings disponibles por persona
-      "zones": [...],           // mapa mental completo
-      "memories": [...]         // memorias globales de Moji (person_id=null)
+      "general_memories": [...]  // memorias globales de Moji (person_id=null)
     }
 ```
 
@@ -3904,10 +3656,8 @@ Opción A — Streamlit Simulator (recomendada):
      b. Enviar mensajes de texto (simula el flujo de audio procesado)
      c. Simular interaction_start con/sin face_embedding
      d. Visualizar en tiempo real: emotion, text_chunks, person_registered, stream_end
-     e. Simular explore_mode y verificar exploration_actions
-     f. Simular person_detected y verificar person_registered
-     g. Simular zone_update y verificar BD actualizada
-     h. Revisar historial de la sesión actual
+     e. Simular person_detected y verificar person_registered
+     f. Revisar historial de la sesión actual
   4. Criterio de éxito: Respuestas coherentes con emotion tag correcto → funcional
 
 Opción B — WebSocket básico (wscat o script Python):
@@ -4283,15 +4033,13 @@ Backend:
 □ TLS via Nginx (Docker Compose) — Nginx maneja certs, FastAPI solo HTTP interno
 □ Integración con Gemini Flash Lite (audio multimodal)
 □ LangChain Deep Agent (services/agent.py) con runtime LangGraph
-□ Agent con tools: get_person_context, get_zone_context, save_memory, learn_zone, find_path
+□ Agent con tools: get_person_context, save_memory
 □ Streaming de text_chunks al cliente (sin TTS en backend)
 □ Sistema de capture_request para foto/video
-□ System prompt v2.0 (amigo familiar + tags: emotion/memory/person_name/zone_learn)
+□ System prompt v2.0 (amigo familiar + tags: emotion/memory/person_name)
 □ Parser de todos los tags v2.0 implementado
 □ Primitivas ESP32 reales en response_meta (turn_right_deg, move_forward_cm, led_color, …)
 □ services/history.py — compactación del historial (cada MEMORY_COMPACTION_THRESHOLD msgs)
-□ services/exploration.py — generate_plan + face_scan_actions
-□ services/zones.py — ZoneService con find_path (Dijkstra) + path_to_primitives
 □ repositories/people.py — CRUD personas + búsqueda por similitud de embedding
 □ repositories/memory.py — filtro de privacidad en escritura
 □ docker-compose.yml funcional (fastapi + nginx)
@@ -4403,4 +4151,4 @@ La implementación debe seguir este documento como guía, ajustando detalles seg
 | 1.2 | 2026-02-08 | Claude | Flujo de activación y reconocimiento facial on-device (ML Kit + FaceNet TFLite) |
 | 1.3 | 2026-02-18 | Claude | Ajustes: TTS Android nativo (reemplaza Piper/ElevenLabs), LLM migrado a Gemini Flash Lite, LangChain Deep Agents como framework del agente (extensible con MCP/tools/skills), captura de foto/video por comando de voz, system prompt TTS-safe, plan de implementación incremental con pruebas por fase |
 | 1.4 | 2026-02-18 | Claude | Ajustes 1-24: búsqueda persona con rotación ±90° (PERSON_SEARCH_TIMEOUT_MS=8s), solo cámara frontal, escucha continua 60s (CONVERSATION_KEEP_ALIVE_MS), landscape fija + tema oscuro + emoji OpenMoji CDN, control solo por voz, historial con compactación (20 msgs) + filtro privacidad, indicadores batería ≤15%, secuencias de movimiento ESP32 + total_duration_ms, Docker Compose (Nginx+FastAPI), eliminado reconocimiento facial backend, 2 ruedas + apoyo, 2 sensores distancia HC-SR04, RGB LED 4 patas, solo L298N + Gear Motor TT Yellow 5V, VL53L0X ToF cliff, pack 6x18650 3S2P + BMS 3S 20A + 2 buck converters, IP 192.168.2.200:9393, Streamlit simulator, OpenMoji sin ZIP |
-| 2.0 | 2026-02-21 | Claude | Transformación a amigo familiar: identidad rediseñada (curioso, empático, explorador); eliminados usuarios/app → reemplazados por `people` + `face_embeddings` múltiples; mapa mental de zonas (`zones` + `zone_paths`, grafo BFS/Dijkstra); modo exploración autónoma (`explore_mode` WS, `ExplorationService`); sistema de ética y límites físicos; 5 primitivas ESP32 reales (`turn_right_deg`, `turn_left_deg`, `move_forward_cm`, `move_backward_cm`, `led_color`) + aliases gesturales; nuevos tags v2.0 (`[memory:]`, `[person_name:]`, `[zone_learn:]`); REST reducido a 2 endpoints (`GET /api/health`, `GET /api/restore`); system prompt reescrito; BD reescrita (elimina `users`, `interactions`; añade `people`, `face_embeddings`, `zones`, `zone_paths`); nuevos mensajes WS: `explore_mode`, `face_scan_mode`, `person_detected`, `zone_update`, `battery_alert`, `person_registered`, `exploration_actions`, `face_scan_actions`, `low_battery_alert` |
+| 2.0 | 2026-02-21 | Claude | Transformación a amigo familiar: identidad rediseñada (curioso, empático, explorador); eliminados usuarios/app → reemplazados por `people` + `face_embeddings` múltiples; sistema de ética y límites físicos; 5 primitivas ESP32 reales (`turn_right_deg`, `turn_left_deg`, `move_forward_cm`, `move_backward_cm`, `led_color`) + aliases gesturales; nuevos tags v2.0 (`[memory:]`, `[person_name:]`); REST reducido a 2 endpoints (`GET /api/health`, `GET /api/restore`); system prompt reescrito; BD reescrita (elimina `users`, `interactions`; añade `people`, `face_embeddings`); nuevos mensajes WS: `face_scan_mode`, `person_detected`, `battery_alert`, `person_registered`, `face_scan_actions`, `low_battery_alert` |

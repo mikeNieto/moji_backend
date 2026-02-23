@@ -6,9 +6,8 @@ v2.0 — Moji Amigo Familiar
 Implementa el flujo completo:
   1. Acepta la conexión y autentica vía API Key.
   2. Bucle de mensajes: gestiona todos los tipos de mensaje del protocolo v2.0.
-  3. Nuevos tipos: explore_mode, face_scan_mode, zone_update, person_detected.
-  4. Parsea tags del LLM: [emotion:], [emojis:], [actions:], [memory:],
-     [person_name:], [zone_learn:], [media_summary:].
+  3. Parsea tags del LLM: [emotion:], [emojis:], [actions:], [memory:],
+     [person_name:], [media_summary:].
   5. Envía emotion + text_chunks progresivamente + response_meta + stream_end.
   6. Background: historial + compactación de memorias.
 
@@ -33,7 +32,6 @@ from starlette.websockets import WebSocketState
 
 from repositories.memory import MemoryRepository
 from repositories.people import PeopleRepository
-from repositories.zones import ZonesRepository
 from services.agent import create_agent, run_agent_stream
 from services.expression import emotion_to_emojis, parse_emotion_tag, parse_emojis_tag
 from services.memory_compaction import compact_memories_async
@@ -45,7 +43,6 @@ from ws_handlers.protocol import (
     make_capture_request,
     make_emotion,
     make_error,
-    make_exploration_actions,
     make_face_scan_actions,
     make_response_meta,
     make_stream_end,
@@ -75,12 +72,6 @@ _MEMORY_TAG_RE = re.compile(
 # [person_name:NOMBRE]  — LLM extrae nombre del audio de presentación
 _PERSON_NAME_TAG_RE = re.compile(
     r"\[person_name:([^\]]+)\]",
-    re.IGNORECASE,
-)
-
-# [zone_learn:NOMBRE:CATEGORIA:descripción]  — LLM registra/actualiza zona
-_ZONE_LEARN_TAG_RE = re.compile(
-    r"\[zone_learn:([^:]+):([^:]+):([^\]]+)\]",
     re.IGNORECASE,
 )
 
@@ -117,7 +108,6 @@ async def ws_interact(websocket: WebSocket) -> None:
 
     # Estado de la interacción actual
     person_id: str | None = None  # slug de la persona identificada
-    current_zone: str | None = None  # zona actual de Moji
     request_id: str = ""
     audio_buffer: bytes = b""
     pending_face_embedding: str | None = None  # base64 embedding pendiente de asociar
@@ -190,7 +180,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         session_id=session_id,
                         agent=agent,
                         face_embedding_b64=face_emb,
-                        current_zone=current_zone,
                     )
 
             elif client_type == "audio_end":
@@ -215,7 +204,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         session_id=session_id,
                         agent=agent,
                         face_embedding_b64=face_emb,
-                        current_zone=current_zone,
                     )
                 else:
                     await _send_safe(
@@ -254,7 +242,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     session_id=session_id,
                     agent=agent,
                     face_embedding_b64=face_emb,
-                    current_zone=current_zone,
                 )
 
             elif client_type == "video":
@@ -280,7 +267,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     history_service=history_service,
                     session_id=session_id,
                     agent=agent,
-                    current_zone=current_zone,
                 )
 
             elif client_type == "multimodal":
@@ -329,49 +315,9 @@ async def ws_interact(websocket: WebSocket) -> None:
                     session_id=session_id,
                     agent=agent,
                     face_embedding_b64=face_emb_mm,
-                    current_zone=current_zone,
                 )
 
             # ── Mensajes nuevos v2.0 ───────────────────────────────────────────
-
-            elif client_type == "explore_mode":
-                # Android indica que Moji entra en modo exploración autónoma.
-                # El agente genera speech + acciones a partir de la zona actual.
-                req_id = msg.get("request_id") or new_session_id()
-                duration = msg.get("duration_minutes", 5)
-                explore_input = (
-                    f"Entra en modo exploración autónoma. Tienes {duration} minutos "
-                    f"para explorar y descubrir zonas nuevas de la casa. "
-                    f"Genera un texto curioso de lo que vas a explorar y sugiere "
-                    f"acciones de movimiento en el tag [actions:]."
-                )
-                context = await _load_moji_context(person_id)
-                explore_full = ""
-                explore_actions: list[dict] = []
-                async for chunk in run_agent_stream(
-                    user_input=explore_input,
-                    history=[],
-                    session_id=session_id,
-                    person_id=person_id,
-                    agent=agent,
-                    memory_context=context,
-                    current_zone=current_zone,
-                ):
-                    explore_full += chunk
-                # Extraer acciones del texto generado
-                _, remaining_exp = parse_emotion_tag(explore_full)
-                _, remaining_exp = parse_emojis_tag(remaining_exp)
-                e_steps, remaining_exp = parse_actions_tag(remaining_exp)
-                if e_steps:
-                    explore_actions = [build_move_sequence("Exploración", e_steps)]
-                await _send_safe(
-                    websocket,
-                    make_exploration_actions(
-                        request_id=req_id,
-                        actions=explore_actions,
-                        exploration_speech=remaining_exp.strip(),
-                    ),
-                )
 
             elif client_type == "face_scan_mode":
                 # Android inicia escaneo facial activo — Moji gira con secuencia predefinida.
@@ -380,30 +326,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                 await _send_safe(
                     websocket,
                     make_face_scan_actions(request_id=req_id, actions=scan_seq),
-                )
-
-            elif client_type == "zone_update":
-                # Android informa de la zona actual de Moji.
-                req_id = msg.get("request_id") or new_session_id()
-                zone_name = msg.get("zone_name", "")
-                category = msg.get("category", "unknown")
-                action = msg.get("action", "enter")  # enter | leave | discover
-                if zone_name:
-                    if action in ("enter", "discover"):
-                        current_zone = zone_name
-                    elif action == "leave":
-                        current_zone = None
-                    asyncio.create_task(
-                        _save_zone_bg(
-                            zone_name=zone_name, category=category, action=action
-                        ),
-                        name=f"zone-{req_id}",
-                    )
-                logger.info(
-                    "ws: zone_update zone=%s action=%s session=%s",
-                    zone_name,
-                    action,
-                    session_id,
                 )
 
             elif client_type == "person_detected":
@@ -437,7 +359,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         session_id=session_id,
                         agent=agent,
                         memory_context=context,
-                        current_zone=current_zone,
                     )
 
     except Exception as exc:
@@ -478,12 +399,11 @@ async def _process_interaction(
     video_mime_type: str = "video/mp4",
     face_embedding_b64: str | None = None,
     memory_context: dict | None = None,
-    current_zone: str | None = None,
 ) -> None:
     """
     Procesa una interacción completa:
       load context → run agent stream → emit emotion + text_chunks
-      → extract tags (memory/person_name/zone_learn) → emit meta
+      → extract tags (memory/person_name) → emit meta
     """
     start_time = time.monotonic()
 
@@ -535,7 +455,6 @@ async def _process_interaction(
             video_data=video_data,
             video_mime_type=video_mime_type,
             memory_context=memory_context,
-            current_zone=current_zone,
             has_face_embedding=has_face_embedding,
         ):
             if not chunk:
@@ -734,21 +653,6 @@ async def _process_interaction(
         )
     full_response = _MEMORY_TAG_RE.sub("", full_response).strip()
 
-    # [zone_learn:NOMBRE:CATEGORIA:descripción]
-    for zl_match in _ZONE_LEARN_TAG_RE.finditer(full_response):
-        zl_name = zl_match.group(1).strip()
-        zl_cat = zl_match.group(2).strip()
-        zl_desc = zl_match.group(3).strip()
-        asyncio.create_task(
-            _save_zone_bg(
-                zone_name=zl_name,
-                category=zl_cat,
-                action="discover",
-                description=zl_desc,
-            ),
-            name=f"zone-learn-{request_id}",
-        )
-    full_response = _ZONE_LEARN_TAG_RE.sub("", full_response).strip()
     intent = classify_intent(full_response)
     if intent == "photo_request":
         await _send_safe(websocket, make_capture_request(request_id, "photo"))
@@ -848,7 +752,6 @@ async def _save_memory_bg(
     memory_type: str,
     content: str,
     person_id: str | None = None,
-    zone_id: int | None = None,
 ) -> None:
     """Persiste una memoria extraída del tag [memory:TIPO:contenido] en background."""
     if db_module.AsyncSessionLocal is None:
@@ -860,7 +763,6 @@ async def _save_memory_bg(
                 memory_type=memory_type,
                 content=content,
                 person_id=person_id,
-                zone_id=zone_id,
             )
             await session.commit()
     except Exception as exc:
@@ -896,35 +798,11 @@ async def _save_person_name_bg(
         logger.warning("ws: error registrando persona name=%s: %s", name, exc)
 
 
-async def _save_zone_bg(
-    zone_name: str,
-    category: str,
-    action: str,
-    description: str = "",
-) -> None:
-    """Crea o actualiza una zona del mapa mental en background."""
-    if db_module.AsyncSessionLocal is None:
-        return
-    try:
-        async with db_module.AsyncSessionLocal() as session:
-            zones_repo = ZonesRepository(session)
-            zone, _ = await zones_repo.get_or_create(zone_name, category, description)
-            if description and not zone.description and zone.id is not None:
-                await zones_repo.update(
-                    zone.id, description=description, category=category
-                )
-            if action == "enter" and zone.id is not None:
-                await zones_repo.set_current_zone(zone.id)
-            await session.commit()
-    except Exception as exc:
-        logger.warning("ws: error guardando zona zone=%s: %s", zone_name, exc)
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 async def _load_moji_context(person_id: str | None) -> dict:
-    """Carga el contexto de memorias de Moji desde la BD (general + persona + zonas)."""
+    """Carga el contexto de memorias de Moji desde la BD (general + persona)."""
     if db_module.AsyncSessionLocal is None:
         return {}
     try:
