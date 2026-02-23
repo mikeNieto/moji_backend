@@ -1,4 +1,4 @@
-# docker-compose.yml — Robi Backend
+# docker-compose.yml — Moji Backend
 #
 # Servicios:
 #   fastapi  — imagen local construida desde el Dockerfile
@@ -12,7 +12,7 @@
 services:
 
   # ── FastAPI ────────────────────────────────────────────────────────────────
-  robi-backend:
+  moji-backend:
     build:
       context: .
       dockerfile: Dockerfile
@@ -60,5 +60,5 @@ services:
       - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
-      robi-backend:
+      moji-backend:
         condition: service_healthy

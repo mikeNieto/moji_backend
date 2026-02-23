@@ -19,7 +19,7 @@ Uso:
     # Tras una interacción con Juan:
     asyncio.create_task(compact_memories_async(person_id="persona_juan_01"))
 
-    # Para memorias generales de Robi:
+    # Para memorias generales de Moji:
     asyncio.create_task(compact_memories_async())
 """
 
@@ -49,11 +49,11 @@ def _build_compaction_prompt(
     person_id: str | None,
 ) -> str:
     """Construye el prompt que le pedirá a Gemini que fusione las memorias."""
-    subject = f"sobre {person_id}" if person_id else "generales de Robi"
+    subject = f"sobre {person_id}" if person_id else "generales de Moji"
     lines = "\n".join(f"  - {m.content} (importancia {m.importance})" for m in memories)
 
     return (
-        f"Eres Robi, un robot doméstico amigable. Tienes {len(memories)} recuerdos "
+        f"Eres Moji, un robot doméstico amigable. Tienes {len(memories)} recuerdos "
         f"de tipo '{memory_type}' {subject}. Fusiónanos en un único recuerdo más rico "
         f"y conciso que preserve toda la información relevante. "
         f"Usa prosa natural, máximo 3 frases. No pierdas detalles importantes.\n\n"
@@ -122,7 +122,7 @@ async def _compact_group(
 
 async def compact_memories_async(person_id: str | None = None) -> None:
     """
-    Compacta las memorias de una persona concreta o las memorias generales de Robi.
+    Compacta las memorias de una persona concreta o las memorias generales de Moji.
 
     - Si `person_id` es None, compacta las memorias generales (person_id IS NULL).
     - Por cada tipo de memoria con más de COMPACTION_THRESHOLD entradas activas,

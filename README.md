@@ -1,6 +1,6 @@
-# Robi Backend
+# Moji Backend
 
-Backend del robot doméstico **Robi** — FastAPI + WebSocket streaming + LangChain DeepAgents + Gemini Flash Lite + SQLite asíncrono + Docker Compose (FastAPI + Nginx).
+Backend del robot doméstico **Moji** — FastAPI + WebSocket streaming + LangChain DeepAgents + Gemini Flash Lite + SQLite asíncrono + Docker Compose (FastAPI + Nginx).
 
 ---
 
@@ -34,7 +34,7 @@ Backend del robot doméstico **Robi** — FastAPI + WebSocket streaming + LangCh
 
 ```bash
 # 1. Clonar / entrar al directorio
-cd robi_backend
+cd moji_backend
 
 # 2. Copiar y editar el .env
 cp .env.example .env

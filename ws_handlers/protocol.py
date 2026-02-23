@@ -1,7 +1,7 @@
 """
 ws_handlers/protocol.py — Funciones helper para construir mensajes del protocolo WS.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 Cada función devuelve un str JSON listo para enviar por WebSocket.
 Los modelos Pydantic de referencia están en models/ws_messages.py.
@@ -173,7 +173,7 @@ def make_exploration_actions(
 
 def make_face_scan_actions(request_id: str, actions: list[dict]) -> str:
     """
-    Secuencia de primitivas ESP32 para que Robi gire buscando personas.
+    Secuencia de primitivas ESP32 para que Moji gire buscando personas.
     {"type": "face_scan_actions", "request_id": "...", "actions": [...]}
     """
     return _to_json(

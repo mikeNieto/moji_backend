@@ -1,7 +1,7 @@
 """
 ws_handlers/streaming.py — Handler WebSocket principal para /ws/interact.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 Implementa el flujo completo:
   1. Acepta la conexión y autentica vía API Key.
@@ -117,7 +117,7 @@ async def ws_interact(websocket: WebSocket) -> None:
 
     # Estado de la interacción actual
     person_id: str | None = None  # slug de la persona identificada
-    current_zone: str | None = None  # zona actual de Robi
+    current_zone: str | None = None  # zona actual de Moji
     request_id: str = ""
     audio_buffer: bytes = b""
     pending_face_embedding: str | None = None  # base64 embedding pendiente de asociar
@@ -335,7 +335,7 @@ async def ws_interact(websocket: WebSocket) -> None:
             # ── Mensajes nuevos v2.0 ───────────────────────────────────────────
 
             elif client_type == "explore_mode":
-                # Android indica que Robi entra en modo exploración autónoma.
+                # Android indica que Moji entra en modo exploración autónoma.
                 # El agente genera speech + acciones a partir de la zona actual.
                 req_id = msg.get("request_id") or new_session_id()
                 duration = msg.get("duration_minutes", 5)
@@ -345,7 +345,7 @@ async def ws_interact(websocket: WebSocket) -> None:
                     f"Genera un texto curioso de lo que vas a explorar y sugiere "
                     f"acciones de movimiento en el tag [actions:]."
                 )
-                context = await _load_robi_context(person_id)
+                context = await _load_moji_context(person_id)
                 explore_full = ""
                 explore_actions: list[dict] = []
                 async for chunk in run_agent_stream(
@@ -374,7 +374,7 @@ async def ws_interact(websocket: WebSocket) -> None:
                 )
 
             elif client_type == "face_scan_mode":
-                # Android inicia escaneo facial activo — Robi gira con secuencia predefinida.
+                # Android inicia escaneo facial activo — Moji gira con secuencia predefinida.
                 req_id = msg.get("request_id") or new_session_id()
                 scan_seq = [build_move_sequence("Escaneo facial", _FACE_SCAN_SEQUENCE)]
                 await _send_safe(
@@ -383,7 +383,7 @@ async def ws_interact(websocket: WebSocket) -> None:
                 )
 
             elif client_type == "zone_update":
-                # Android informa de la zona actual de Robi.
+                # Android informa de la zona actual de Moji.
                 req_id = msg.get("request_id") or new_session_id()
                 zone_name = msg.get("zone_name", "")
                 category = msg.get("category", "unknown")
@@ -421,8 +421,8 @@ async def ws_interact(websocket: WebSocket) -> None:
                         session_id,
                     )
                 else:
-                    # Cara desconocida: Robi debe preguntar el nombre
-                    context = await _load_robi_context(None)
+                    # Cara desconocida: Moji debe preguntar el nombre
+                    context = await _load_moji_context(None)
                     ask_input = (
                         "Acabo de detectar a una persona que no conozco. "
                         "Salúdala con curiosidad y pregúntale su nombre de forma amigable."
@@ -489,7 +489,7 @@ async def _process_interaction(
 
     # 1. Cargar contexto de memorias (si no se pasó ya)
     if memory_context is None:
-        memory_context = await _load_robi_context(person_id)
+        memory_context = await _load_moji_context(person_id)
 
     # 2. Obtener historial de la sesión
     history = history_service.get_history(session_id)
@@ -768,7 +768,7 @@ async def _process_interaction(
     actions: list[dict] = []
     if response_actions:
         actions = [
-            build_move_sequence("Movimiento sugerido por Robi", response_actions)
+            build_move_sequence("Movimiento sugerido por Moji", response_actions)
         ]
     processing_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -923,14 +923,14 @@ async def _save_zone_bg(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _load_robi_context(person_id: str | None) -> dict:
-    """Carga el contexto de memorias de Robi desde la BD (general + persona + zonas)."""
+async def _load_moji_context(person_id: str | None) -> dict:
+    """Carga el contexto de memorias de Moji desde la BD (general + persona + zonas)."""
     if db_module.AsyncSessionLocal is None:
         return {}
     try:
         async with db_module.AsyncSessionLocal() as session:
             repo = MemoryRepository(session)
-            return await repo.get_robi_context(person_id=person_id)
+            return await repo.get_moji_context(person_id=person_id)
     except Exception as exc:
         logger.warning("ws: error cargando contexto person_id=%s: %s", person_id, exc)
         return {}

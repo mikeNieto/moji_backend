@@ -31,7 +31,7 @@ def _row_to_zone(row: ZoneRow) -> Zone:
         description=row.description,
         known_since=row.known_since,
         accessible=row.accessible,
-        current_robi_zone=row.current_robi_zone,
+        current_moji_zone=row.current_moji_zone,
     )
 
 
@@ -67,7 +67,7 @@ class ZonesRepository:
             category=category,
             description=description,
             accessible=accessible,
-            current_robi_zone=False,
+            current_moji_zone=False,
         )
         self._session.add(row)
         await self._session.flush()
@@ -139,24 +139,24 @@ class ZonesRepository:
         return [_row_to_zone(r) for r in result.scalars().all()]
 
     async def get_current_zone(self) -> Zone | None:
-        """Devuelve la zona donde Robi está ahora (current_robi_zone=True)."""
+        """Devuelve la zona donde Moji está ahora (current_moji_zone=True)."""
         result = await self._session.execute(
-            select(ZoneRow).where(ZoneRow.current_robi_zone.is_(True))
+            select(ZoneRow).where(ZoneRow.current_moji_zone.is_(True))
         )
         row = result.scalar_one_or_none()
         return _row_to_zone(row) if row else None
 
     async def set_current_zone(self, zone_id: int) -> Zone | None:
         """
-        Marca `zone_id` como la zona actual de Robi y desmarca cualquier otra.
+        Marca `zone_id` como la zona actual de Moji y desmarca cualquier otra.
         Devuelve la zona activada o None si no existe.
         """
         # Desmarcar todas
         all_result = await self._session.execute(
-            select(ZoneRow).where(ZoneRow.current_robi_zone.is_(True))
+            select(ZoneRow).where(ZoneRow.current_moji_zone.is_(True))
         )
         for row in all_result.scalars().all():
-            row.current_robi_zone = False
+            row.current_moji_zone = False
 
         # Marcar la nueva
         target_result = await self._session.execute(
@@ -166,7 +166,7 @@ class ZonesRepository:
         if target is None:
             await self._session.flush()
             return None
-        target.current_robi_zone = True
+        target.current_moji_zone = True
         await self._session.flush()
         await self._session.refresh(target)
         return _row_to_zone(target)

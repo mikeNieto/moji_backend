@@ -1,7 +1,7 @@
 """
-tests/streamlit_simulator/app.py — Simulador Streamlit para Robi Backend
+tests/streamlit_simulator/app.py — Simulador Streamlit para Moji Backend
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 Uso:
     uv run streamlit run tests/streamlit_simulator/app.py
@@ -96,7 +96,7 @@ def _init_session() -> None:
         "connected": False,
         "history": [],
         "last_result": None,  # dict con la última respuesta de interacción
-        "last_event_result": None,  # dict con la última respuesta de evento Robi
+        "last_event_result": None,  # dict con la última respuesta de evento Moji
         "camera_on": False,
         "video_mode": "foto",
         # Contadores para resetear widgets (incrementar = nuevo widget vacío)
@@ -106,7 +106,7 @@ def _init_session() -> None:
         "video_gen": 0,
         # Flujo persona nueva (wizard multi-paso)
         "new_person_step": 0,  # 0=idle 1=name_asked 2=registered
-        "new_person_robi_q": None,  # resultado streaming paso 1
+        "new_person_moji_q": None,  # resultado streaming paso 1
         "new_person_result": None,  # resultado streaming paso 2
         "new_person_registered_name": None,
         "new_person_registered_id": None,
@@ -330,7 +330,7 @@ def rest_get(base_url: str, path: str, api_key: str) -> tuple[int, dict]:
 # ── App ───────────────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Robi Simulator v2",
+    page_title="Moji Simulator v2",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -340,8 +340,8 @@ _init_session()
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("🤖 Robi Simulator v2")
-    st.caption("Herramienta de prueba para el backend de Robi sin Android.")
+    st.title("🤖 Moji Simulator v2")
+    st.caption("Herramienta de prueba para el backend de Moji sin Android.")
     st.divider()
 
     st.subheader("⚙️ Configuración")
@@ -370,7 +370,7 @@ with st.sidebar:
     person_id = st.selectbox(
         "person_id",
         ["unknown", "person_juan", "person_maria", "person_pedro"],
-        help="Slug de la persona reconocida. 'unknown' = Robi no reconoció a nadie.",
+        help="Slug de la persona reconocida. 'unknown' = Moji no reconoció a nadie.",
     )
     custom_person = st.text_input("... o escribe un person_id personalizado", value="")
     if custom_person.strip():
@@ -425,7 +425,7 @@ with main_col:
 
     # ── Inputs (claves dinámicas — incrementar el contador resetea el widget) ──
     tab_text, tab_audio, tab_video, tab_events = st.tabs(
-        ["📝 Texto", "🎙️ Audio", "📹 Video", "🤖 Eventos Robi"]
+        ["📝 Texto", "🎙️ Audio", "📹 Video", "🤖 Eventos Moji"]
     )
 
     with tab_text:
@@ -481,7 +481,7 @@ with main_col:
 
     with tab_events:
         st.caption(
-            "Simula los eventos que Android envía a Robi según el protocolo v2.0."
+            "Simula los eventos que Android envía a Moji según el protocolo v2.0."
         )
 
         # ── explore_mode ──────────────────────────────────────────────────────
@@ -648,7 +648,7 @@ with main_col:
         # ── flujo_persona_nueva ───────────────────────────────────────────────
         with st.expander("🆕 Flujo Persona Nueva — Registro completo", expanded=False):
             st.caption(
-                "Wizard para probar el flujo completo: Robi detecta una persona "
+                "Wizard para probar el flujo completo: Moji detecta una persona "
                 "desconocida → pregunta el nombre → registra en BD → reencuentro."
             )
 
@@ -680,7 +680,7 @@ with main_col:
             # ── Paso 0: detectar persona desconocida ──────────────────────────
             if pnf_step == 0:
                 st.markdown(
-                    "Pulsa el botón para simular que Robi detecta una cara desconocida. "
+                    "Pulsa el botón para simular que Moji detecta una cara desconocida. "
                     "El backend lanzará el agente para saludar y pedir el nombre."
                 )
                 pnf_conf = st.slider(
@@ -694,7 +694,7 @@ with main_col:
                 ):
                     req_id = str(uuid.uuid4())
                     start_ts = time.monotonic()
-                    with st.spinner("Robi está saludando a la persona desconocida…"):
+                    with st.spinner("Moji está saludando a la persona desconocida…"):
                         try:
                             st.session_state.ws.send(
                                 json.dumps(
@@ -721,22 +721,22 @@ with main_col:
                                 "first_chunk_latency_ms": None,
                                 "chunks": [],
                             }
-                    st.session_state.new_person_robi_q = pnf_r1
+                    st.session_state.new_person_moji_q = pnf_r1
                     if not pnf_r1.get("error"):
                         st.session_state.new_person_step = 1
                     st.rerun()
 
             # ── Paso 1: usuario dice su nombre ────────────────────────────────
             elif pnf_step == 1:
-                robi_q = st.session_state.get("new_person_robi_q") or {}
-                if robi_q.get("error"):
-                    st.error(robi_q["error"])
-                elif robi_q.get("text"):
+                moji_q = st.session_state.get("new_person_moji_q") or {}
+                if moji_q.get("error"):
+                    st.error(moji_q["error"])
+                elif moji_q.get("text"):
                     with st.container(border=True):
-                        st.caption("🤖 Robi preguntó:")
+                        st.caption("🤖 Moji preguntó:")
                         st.markdown(
-                            f"{emotion_img_html(robi_q.get('emotion', 'neutral'), 28)} "
-                            f"{robi_q['text']}",
+                            f"{emotion_img_html(moji_q.get('emotion', 'neutral'), 28)} "
+                            f"{moji_q['text']}",
                             unsafe_allow_html=True,
                         )
 
@@ -803,7 +803,7 @@ with main_col:
                     if st.button("↩ Reiniciar", use_container_width=True):
                         for _k in (
                             "new_person_step",
-                            "new_person_robi_q",
+                            "new_person_moji_q",
                             "new_person_result",
                             "new_person_registered_name",
                             "new_person_registered_id",
@@ -833,7 +833,7 @@ with main_col:
                             "Revisa el debug o intenta de nuevo con audio."
                         )
                     with st.container(border=True):
-                        st.caption("🤖 Robi respondió:")
+                        st.caption("🤖 Moji respondió:")
                         st.markdown(
                             f"{emotion_img_html(pnf_r2.get('emotion', 'neutral'), 28)} "
                             f"{pnf_r2.get('text', '')}",
@@ -934,7 +934,7 @@ with main_col:
                 ):
                     for _k in (
                         "new_person_step",
-                        "new_person_robi_q",
+                        "new_person_moji_q",
                         "new_person_result",
                         "new_person_registered_name",
                         "new_person_registered_id",
@@ -1095,7 +1095,7 @@ with main_col:
             if result.get("latency_ms") is not None:
                 st.caption(f"⏱️ Latencia total: {result['latency_ms']} ms")
 
-    # ── Último resultado de evento Robi ───────────────────────────────────────
+    # ── Último resultado de evento Moji ───────────────────────────────────────
     ev = st.session_state.last_event_result
     if ev:
         st.divider()
@@ -1112,7 +1112,7 @@ with main_col:
                 speech = received.get("exploration_speech", "")
                 actions = received.get("actions", [])
                 if speech:
-                    st.markdown(f"**Robi dice:** {speech}")
+                    st.markdown(f"**Moji dice:** {speech}")
                 if actions:
                     with st.expander(f"⚙️ Acciones de exploración ({len(actions)})"):
                         st.json(actions)
@@ -1133,7 +1133,7 @@ with main_col:
                     f"Ahora escribe ese person_id en el campo **'personalizado'** del "
                     f"sidebar y envía un mensaje desde la pestaña 📝 Texto para "
                     f"conversar normalmente con {_rname}. "
-                    f"Verifica que Robi recuerde cosas de turnos anteriores."
+                    f"Verifica que Moji recuerde cosas de turnos anteriores."
                 )
 
             elif rtype in ("zone_update_sent", "person_detected_sent"):

@@ -41,7 +41,7 @@ KEY_BITS=4096
 mkdir -p "$CERTS_DIR"
 
 echo "========================================================"
-echo " Robi — Generador de certificado TLS autofirmado"
+echo " Moji — Generador de certificado TLS autofirmado"
 echo "========================================================"
 echo " IP/SAN  : $SERVER_IP"
 echo " Validez : $DAYS días (~10 años)"
@@ -64,7 +64,7 @@ openssl req -x509 \
     -out    "$CERTS_DIR/server.crt" \
     -days   "$DAYS" \
     -nodes \
-    -subj   "/CN=$SERVER_IP/O=Robi Robot/OU=Dev" \
+    -subj   "/CN=$SERVER_IP/O=Moji Robot/OU=Dev" \
     -addext "subjectAltName=${SAN_TYPE}:${SERVER_IP}"
 
 echo "✅  Certificado generado correctamente."

@@ -2,7 +2,7 @@
 Entidades de dominio — representación en memoria (no SQLAlchemy).
 Usadas como DTOs entre repositorios y servicios.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
   - Eliminadas: User, Interaction
   - Nuevas: Person, FaceEmbedding, Zone, ZonePath
   - Modificada: Memory (person_id nullable, memory_type ampliado, zone_id)
@@ -21,7 +21,7 @@ def _now() -> datetime:
 
 @dataclass
 class Person:
-    """Persona conocida por Robi (familiar, amigo, vecino…)."""
+    """Persona conocida por Moji (familiar, amigo, vecino…)."""
 
     person_id: str  # slug único, p.ej. "persona_juan_01"
     name: str
@@ -60,7 +60,7 @@ class Zone:
     description: str = ""
     known_since: datetime = field(default_factory=_now)
     accessible: bool = True
-    current_robi_zone: bool = False  # solo una zona activa a la vez
+    current_moji_zone: bool = False  # solo una zona activa a la vez
     id: int | None = None
 
 
@@ -83,7 +83,7 @@ MEMORY_TYPES = frozenset({"experience", "zone_info", "person_fact", "general"})
 
 @dataclass
 class Memory:
-    """Recuerdo almacenado por Robi."""
+    """Recuerdo almacenado por Moji."""
 
     memory_type: str  # experience | zone_info | person_fact | general
     content: str

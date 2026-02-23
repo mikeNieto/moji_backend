@@ -347,13 +347,13 @@ class TestConversationHistory:
     async def test_add_and_get(self):
         history = ConversationHistory()
         await history.add_message(
-            "sess1", "user", "Hola Robi", person_id="persona_ana_001"
+            "sess1", "user", "Hola Moji", person_id="persona_ana_001"
         )
         await history.add_message("sess1", "assistant", "[emotion:greeting] Hola!")
 
         msgs = history.get_history("sess1")
         assert len(msgs) == 2
-        assert msgs[0] == {"role": "user", "content": "Hola Robi"}
+        assert msgs[0] == {"role": "user", "content": "Hola Moji"}
         assert msgs[1] == {"role": "assistant", "content": "[emotion:greeting] Hola!"}
 
     async def test_empty_session_returns_empty_list(self):

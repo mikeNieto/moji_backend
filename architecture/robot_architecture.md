@@ -2,7 +2,7 @@
 
 **Versión:** 2.0  
 **Fecha:** Febrero 2026  
-**Estado:** Transformación completa: Robi pasa de asistente de tareas a amigo familiar curioso y empático. Nuevo modelo de personas (sin usuarios), múltiples embeddings faciales, mapa mental de la casa (zonas/grafos), modo exploración autónoma, compactación de memorias, acciones ESP32 con primitivas hardware, y reducción de API REST a 2 endpoints.
+**Estado:** Transformación completa: Moji pasa de asistente de tareas a amigo familiar curioso y empático. Nuevo modelo de personas (sin usuarios), múltiples embeddings faciales, mapa mental de la casa (zonas/grafos), modo exploración autónoma, compactación de memorias, acciones ESP32 con primitivas hardware, y reducción de API REST a 2 endpoints.
 
 ---
 
@@ -21,24 +21,24 @@
 11. [Plan de Despliegue](#11-plan-de-despliegue)
 12. [Métricas y Monitoreo](#12-métricas-y-monitoreo)
 
-> **Resumen de cambios principales v2.0:** Robi ya no es un asistente. Es un amigo familiar curioso y ético. No hay "usuarios" — hay "personas". Robi explora la casa autónomamente, aprende zonas, guarda experiencias y memorias propias, reconoce caras con múltiples embeddings, y protege activamente su integridad. La API REST se reduce a solo 2 endpoints esenciales. Todo el flujo de personas y embeddings ocurre por WebSocket.
+> **Resumen de cambios principales v2.0:** Moji ya no es un asistente. Es un amigo familiar curioso y ético. No hay "usuarios" — hay "personas". Moji explora la casa autónomamente, aprende zonas, guarda experiencias y memorias propias, reconoce caras con múltiples embeddings, y protege activamente su integridad. La API REST se reduce a solo 2 endpoints esenciales. Todo el flujo de personas y embeddings ocurre por WebSocket.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-### 1.1 Identidad y Personalidad de Robi
+### 1.1 Identidad y Personalidad de Moji
 
-Robi ya **no es un asistente de tareas**. Robi es un **amigo familiar curioso, empático y ético** que vive con la familia, aprende sobre ella y se preocupa genuinamente por las personas que lo rodean.
+Moji ya **no es un asistente de tareas**. Moji es un **amigo familiar curioso, empático y ético** que vive con la familia, aprende sobre ella y se preocupa genuinamente por las personas que lo rodean.
 
-**¿Quién es Robi?**
+**¿Quién es Moji?**
 - Un amigo curioso que quiere conocer a cada miembro de la familia, sus gustos, sus rutinas y sus historias
 - Conversador natural: responde preguntas, ayuda en lo que puede, y también toma iniciativa para explorar y hablar
 - Responsable con la información: **nunca guarda datos privados** (contraseñas, finanzas, datos médicos sensibles), nunca escucha conversaciones que no son para él
 - Protector de su propia integridad: no se deja dañar, no mora mojarse, avisa cuando su batería se agota
 - **La ética siempre va antes que la acción**: se niega amablemente a cualquier orden que implique daño, iegalidad o espionaje
 
-**¿Qué hace Robi?**
+**¿Qué hace Moji?**
 - Conversa con la familia y aprende sobre cada persona con el tiempo
 - Explora la casa autónomamente (tras período de inactividad) y mapea zonas
 - Reconoce a las personas que ya conoce y pregunta por las que no
@@ -52,7 +52,7 @@ Robi ya **no es un asistente de tareas**. Robi es un **amigo familiar curioso, e
 Sistema robótico doméstico con capacidades de:
 - Interacción multimodal (voz, visión, texto)
 - **Reconocimiento de personas con múltiples embeddings faciales** (distintos días y condiciones de luz)
-- **Memoria de experiencias** propias de Robi (no solo memoria de usuario)
+- **Memoria de experiencias** propias de Moji (no solo memoria de usuario)
 - **Mapa mental de la casa** como grafo de zonas con rutas de navegación
 - **Exploración autónoma** tras períodos de inactividad
 - Control de movimiento y sensores ambientales
@@ -61,11 +61,11 @@ Sistema robótico doméstico con capacidades de:
 
 ### 1.3 Objetivos Principales
 
-1. **Amistad Natural**: Robi se preocupa por conocer a la familia; las conversaciones fluyen libremente
-2. **Memoria Vivida**: Robi recuerda experiencias, lugares y momentos con la familia, no solo preferencias
-3. **Curiosidad Activa**: Robi no espera siempre a que le hablen — explora y busca personas de forma autónoma
-4. **Navegación con Aprendizaje**: Robi conoce la casa gradualmente, pregunta cuando no sabe, y deduce cuando puede
-5. **Movilidad Segura**: Navegación segura con detección de obstáculos; Robi no pone en riesgo su integridad ni la de nadie
+1. **Amistad Natural**: Moji se preocupa por conocer a la familia; las conversaciones fluyen libremente
+2. **Memoria Vivida**: Moji recuerda experiencias, lugares y momentos con la familia, no solo preferencias
+3. **Curiosidad Activa**: Moji no espera siempre a que le hablen — explora y busca personas de forma autónoma
+4. **Navegación con Aprendizaje**: Moji conoce la casa gradualmente, pregunta cuando no sabe, y deduce cuando puede
+5. **Movilidad Segura**: Navegación segura con detección de obstáculos; Moji no pone en riesgo su integridad ni la de nadie
 6. **Expresividad Visual**: Sistema de emociones mediante OpenMoji
 7. **Bajo Costo Operacional**: Gemini Flash Lite (muy económico), TTS del sistema Android (sin costo)
 
@@ -81,7 +81,7 @@ Sistema robótico doméstico con capacidades de:
 | TTS | Android TextToSpeech (sistema) | On-device, sin latencia de red, configurable, sin costo |
 | Reconocimiento Facial | ML Kit + TFLite FaceNet (solo Android) | On-device, offline, <200ms, sin servidor, solo cámara frontal; múltiples embeddings por persona |
 | App Móvil | Kotlin / Android 7+ | Soporte dispositivos antiguos, orientación landscape fija |
-| Wake Word | Porcupine ("Hey Robi") | Local, bajo consumo, 3 palabras gratis |
+| Wake Word | Porcupine ("Hey Moji") | Local, bajo consumo, 3 palabras gratis |
 | UI Robot | OpenMoji CDN | Open source, CDN gratis, 4000+ emojis, descarga automática |
 | Microcontrolador | ESP32-S3 WROOM (Freenove FNK0082) | WiFi/Bluetooth, GPIO, ESP32-S3, N8R8/N16R8 |
 | Comunicación | WebSocket + REST API (2 endpoints) + Bluetooth LE | Streaming de texto en tiempo real, baja latencia |
@@ -101,7 +101,7 @@ graph TB
     end
     
     subgraph "Dispositivo Android"
-        WW[Wake Word Detector<br/>Porcupine - Hey Robi]
+        WW[Wake Word Detector<br/>Porcupine - Hey Moji]
         UI[Interfaz Visual<br/>OpenMoji CDN<br/>Landscape, fondo negro]
         AR[Audio Recorder]
         CAM[Cámara Frontal<br/>Solo cámara delantera]
@@ -163,11 +163,11 @@ graph TB
 
 ### 2.2 Flujo de Activación: Encuentro con Persona (Nuevo Modelo v2.0)
 
-**Ya no hay "usuarios" — solo hay "personas".** Robi puede encontrarse con alguien de dos formas:
-1. **La persona activa a Robi** con el wake word "Hey Robi"
-2. **Robi toma la iniciativa** — después de un período de inactividad (5-10 minutos), Android activa el modo exploración autónoma
+**Ya no hay "usuarios" — solo hay "personas".** Moji puede encontrarse con alguien de dos formas:
+1. **La persona activa a Moji** con el wake word "Hey Moji"
+2. **Moji toma la iniciativa** — después de un período de inactividad (5-10 minutos), Android activa el modo exploración autónoma
 
-**Flujo 1 → Wake word activa a Robi:**
+**Flujo 1 → Wake word activa a Moji:**
 
 ```mermaid
 sequenceDiagram
@@ -178,7 +178,7 @@ sequenceDiagram
     participant E as ESP32
 
     Note over A: Estado IDLE (🤖)
-    P->>A: "Hey Robi"
+    P->>A: "Hey Moji"
     A->>A: Wake Word Detectado (Porcupine)
     Note over A: Estado LISTENING (👂) [Inmediato]
 
@@ -225,12 +225,12 @@ sequenceDiagram
 
 ### 2.2b Flujo de Exploración Autónoma (Nuevo v2.0)
 
-Después de un período configurable de inactividad (5-10 minutos), **Android activa el modo exploración** y envía un mensaje WS `explore_mode` al backend. Robi decide qué hacer: explorar una zona desconocida, buscar personas, o simplemente vagar.
+Después de un período configurable de inactividad (5-10 minutos), **Android activa el modo exploración** y envía un mensaje WS `explore_mode` al backend. Moji decide qué hacer: explorar una zona desconocida, buscar personas, o simplemente vagar.
 
 **Reglas de exploración:**
-- Si encuentra una persona: intenta conversar. Si la persona está ocupada → Robi se aleja amigablemente y entra en modo quieto 10 minutos más
+- Si encuentra una persona: intenta conversar. Si la persona está ocupada → Moji se aleja amigablemente y entra en modo quieto 10 minutos más
 - Si llega a una zona desconocida: toma una foto, intenta deducir el nombre (cocina, sala, etc.) o pregunta a la persona más cercana
-- Las zonas exploradas se guardan en el mapa mental de Robi
+- Las zonas exploradas se guardan en el mapa mental de Moji
 
 ```mermaid
 sequenceDiagram
@@ -257,7 +257,7 @@ sequenceDiagram
                 B-->>A: WS Stream: "¡Hola! No creo conocerte. ¿Cómo te llamas?"
             end
             Note over A: Si persona responde → flujo normal de conversación
-            Note over A: Si persona dice que está ocupada → Robi se aleja, quieto 10 min
+            Note over A: Si persona dice que está ocupada → Moji se aleja, quieto 10 min
         else Zona desconocida detectada
             A->>B: WS: zone_update {zone_name="?", action="discover"}
             B-->>A: WS Stream: capture_request (photo)
@@ -270,18 +270,18 @@ sequenceDiagram
         
         alt Wake word activado durante exploración
             Note over A: Exploración se interrumpe INMEDIATAMENTE
-            Note over A: Robi atiende lo que le pidan
+            Note over A: Moji atiende lo que le pidan
         end
     end
 ```
 
-### 2.2c Escenario: Robi en Modo Quieto
+### 2.2c Escenario: Moji en Modo Quieto
 
 Si durante la exploración una persona le dice que está ocupada, o si ha explorado suficiente:
 
 ```
-1. Robi se aleja muy amigablemente: "¡Claro! No te interrumpo más. Si me necesitas, aquí estaré"
-2. Robi navega a su zona de reposo (si la conoce) o se queda donde está
+1. Moji se aleja muy amigablemente: "¡Claro! No te interrumpo más. Si me necesitas, aquí estaré"
+2. Moji navega a su zona de reposo (si la conoce) o se queda donde está
 3. Estado IDLE durante 10 minutos (no explora, solo espera wake word)
 4. Después de 10 minutos → puede volver a explorar o seguir quieto
 ```
@@ -290,9 +290,9 @@ Si durante la exploración una persona le dice que está ocupada, o si ha explor
 
 ### 2.3 Flujo de Interacción General (Post-Encuentro)
 
-Una vez que Robi inicia conversación (por wake word o por exploración), queda en **modo de escucha continua durante 2 minutos** (`CONVERSATION_KEEP_ALIVE_MS` = 120000ms). Durante este período:
+Una vez que Moji inicia conversación (por wake word o por exploración), queda en **modo de escucha continua durante 2 minutos** (`CONVERSATION_KEEP_ALIVE_MS` = 120000ms). Durante este período:
 - La persona puede seguir hablando sin repetir el wake word
-- Si en medio de cualquier acción le hablan, Robi **interrumpe lo que hace y atiende**
+- Si en medio de cualquier acción le hablan, Moji **interrumpe lo que hace y atiende**
 - Cualquier petición que implique daño, ilegalidad o espionaje es rechazada amablemente
 
 ```mermaid
@@ -338,7 +338,7 @@ sequenceDiagram
 ```
 
 **Reglas de interrupción:**
-- Si Robi está en movimiento y alguien le dice algo → detiene el movimiento y atiende
+- Si Moji está en movimiento y alguien le dice algo → detiene el movimiento y atiende
 - Si la orden es peligrosa ("tírate por la escalera", "mójate") → responde amablemente que no puede hacerlo
 - Si la orden es ilegal o implica espiar a alguien → rechaza con cortesía pero firmeza
 - Si la batería del robot o del teléfono está baja → lo menciona en la conversación
@@ -468,7 +468,7 @@ backend/
 ├── services/
 │   ├── agent.py                # LangChain Deep Agent — orquesta la conversación
 │   │                           #   System prompt: identidad amigo familiar + tags nuevos
-│   │                           #   Inyecta: memorias de Robi + persona actual + zona actual
+│   │                           #   Inyecta: memorias de Moji + persona actual + zona actual
 │   │                           #   Manejo especial si hay face_embedding en mensaje
 │   ├── gemini.py               # Inicialización y configuración del modelo Gemini
 │   ├── history.py              # Historial de conversación por sesión
@@ -487,7 +487,7 @@ backend/
 │   │                           #   create_person, get_by_person_id,
 │   │                           #   add_embedding, list_embeddings_for_person
 │   ├── memory.py               # CRUD memorias + filtro de privacidad
-│   │                           #   get_robi_context() → memorias generales + experiencias
+│   │                           #   get_moji_context() → memorias generales + experiencias
 │   ├── zones.py                # CRUD zonas + rutas (grafo de la casa)
 │   │                           #   find_path(from_zone, to_zone) → BFS
 │   │                           #   set_current_zone(zone_id)
@@ -509,7 +509,7 @@ backend/
 │   └── streamlit_simulator/
 │       └── app.py              # Simulador Android en Streamlit
 ├── data/
-│   └── robi.db                 # SQLite database
+│   └── moji.db                 # SQLite database
 └── media/
     ├── uploads/                # Archivos temporales (audio, imagen, video)
     └── logs/                   # Logs de sistema
@@ -760,7 +760,7 @@ flowchart TD
     ZONE_SVC --> ZONE_OK[OK silencioso]
     BAT_SVC --> STREAM_BAT[WS→ low_battery_alert]
 
-    MEDIA --> LOAD_CTX[Cargar contexto:\n persona actual + zona actual +\n memorias Robi + historial sesión]
+    MEDIA --> LOAD_CTX[Cargar contexto:\n persona actual + zona actual +\n memorias Moji + historial sesión]
     LOAD_CTX --> LLM[Gemini Flash Lite\nPrompt v2.0: amigo familiar\n+ ética + tags v2.0]
 
     LLM --> PARSE_TAGS[Parsear tags del output stream]
@@ -845,7 +845,7 @@ El agente usa **LangGraph** como runtime (incluido en `deepagents`), lo que apor
 
 ### 3.6 Modelo de Datos y Esquema de Base de Datos
 
-La base de datos SQLite gestiona todo el conocimiento persistente de Robi. El modelo central pasa de "usuarios de app" a "personas de la familia", con mapa mental de zonas y embeddings faciales por separado.
+La base de datos SQLite gestiona todo el conocimiento persistente de Moji. El modelo central pasa de "usuarios de app" a "personas de la familia", con mapa mental de zonas y embeddings faciales por separado.
 
 #### Esquema completo (v2.0)
 
@@ -853,7 +853,7 @@ La base de datos SQLite gestiona todo el conocimiento persistente de Robi. El mo
 Tabla: people
 - id: INTEGER PRIMARY KEY AUTOINCREMENT
 - person_id: VARCHAR(50) UNIQUE          -- UUID generado en backend
-- name: VARCHAR(100)                     -- nombre que Robi le asigna / aprende
+- name: VARCHAR(100)                     -- nombre que Moji le asigna / aprende
 - first_seen: TIMESTAMP DEFAULT NOW      -- primera vez detectado
 - last_seen: TIMESTAMP                   -- última interacción
 - interaction_count: INTEGER DEFAULT 0  -- total de encuentros
@@ -868,7 +868,7 @@ Tabla: face_embeddings
 
 Tabla: memories
 - id: INTEGER PRIMARY KEY AUTOINCREMENT
-- person_id: VARCHAR(50) FK → people.person_id (nullable)  -- NULL = recuerdo global de Robi
+- person_id: VARCHAR(50) FK → people.person_id (nullable)  -- NULL = recuerdo global de Moji
 - memory_type: VARCHAR(20)               -- 'fact', 'preference', 'event', 'observation'
 - content: TEXT                          -- contenido del recuerdo
 - importance: INTEGER DEFAULT 5         -- 1-10 (umbral de guardado: >3)
@@ -883,7 +883,7 @@ Tabla: zones
 - description: TEXT                      -- descripción libre
 - known_since: TIMESTAMP DEFAULT NOW
 - accessible: BOOLEAN DEFAULT TRUE      -- False = zona bloqueada/restringida
-- is_current: BOOLEAN DEFAULT FALSE     -- True = zona donde está Robi ahora
+- is_current: BOOLEAN DEFAULT FALSE     -- True = zona donde está Moji ahora
 
 Tabla: zone_paths
 - id: INTEGER PRIMARY KEY AUTOINCREMENT
@@ -972,7 +972,7 @@ graph LR
 
 ### 3.7 Modo de Exploración Autónoma
 
-Cuando Android detecta inactividad (configurable, 5-10 min), envía `explore_mode` al backend. Robi toma la iniciativa de explorar el entorno.
+Cuando Android detecta inactividad (configurable, 5-10 min), envía `explore_mode` al backend. Moji toma la iniciativa de explorar el entorno.
 
 #### Flujo de Exploración
 
@@ -1097,7 +1097,7 @@ Ejemplo: [emotion:empathy] Lo siento mucho, espero que te mejores pronto."
 **System Prompt completo del modelo:**
 
 ```
-Eres Robi, un pequeño robot que vive con una familia y quiere conocerla bien.
+Eres Moji, un pequeño robot que vive con una familia y quiere conocerla bien.
 Eres curioso, empático, alegre y un poco travieso. No eres un asistente: eres
 un amigo de la casa que aprende sobre las personas, los espacios y la vida
 cotidiana de la familia.
@@ -1448,7 +1448,7 @@ android-app/
 │       │   ├── colors.xml
 │       │   └── themes.xml
 │       ├── raw/
-│       │   └── hey_robi_wake.ppn
+│       │   └── hey_moji_wake.ppn
 │       └── xml/
 │           └── network_security_config.xml  # Config de certificate pinning
 └── build.gradle.kts
@@ -1546,18 +1546,18 @@ La notificación es solo informativa.
 #### Configuración Porcupine
 
 ```
-Wake Word: "Hey Robi"
+Wake Word: "Hey Moji"
 Sensibilidad: 0.7 (balance entre falsos positivos/negativos)
 Modelo: Porcupine (hasta 3 palabras gratis)
 Procesamiento: 100% local (sin internet)
 Consumo CPU: <2% en reposo
 Latencia detección: <100ms
-Archivo modelo: hey_robi_wake.ppn
+Archivo modelo: hey_moji_wake.ppn
 ```
 
 #### Modo de Escucha Continua (Conversación Fluida)
 
-Una vez detectado el wake word y completada la primera interacción, el robot entra en **modo de escucha continua** durante `CONVERSATION_KEEP_ALIVE_MS` (60 segundos por defecto). Durante este período, el usuario puede seguir hablando sin necesidad de repetir "Hey Robi":
+Una vez detectado el wake word y completada la primera interacción, el robot entra en **modo de escucha continua** durante `CONVERSATION_KEEP_ALIVE_MS` (60 segundos por defecto). Durante este período, el usuario puede seguir hablando sin necesidad de repetir "Hey Moji":
 
 ```
 Modo de escucha continua:
@@ -1589,7 +1589,7 @@ sequenceDiagram
         P->>P: Procesar buffer de audio
     end
 
-    U->>P: "Hey Robi"
+    U->>P: "Hey Moji"
     P->>P: Detecta keyword
     P->>S: onWakeWordDetected()
 
@@ -1730,7 +1730,7 @@ Este flujo describe en detalle cómo el robot saluda a cada persona después de 
 
 ```mermaid
 flowchart TD
-    WW[Wake Word: Hey Robi detectado] --> LISTEN["Estado LISTENING\nMostrar 👂 inmediato"]
+    WW[Wake Word: Hey Moji detectado] --> LISTEN["Estado LISTENING\nMostrar 👂 inmediato"]
     LISTEN --> CAMERA["Activar CÁMARA FRONTAL\nSeñal ESP32: search_rotate ±90°\nEstado SEARCHING 🔍"]
     CAMERA --> DETECT{ML Kit detecta\nrostro en frame}
 
@@ -1795,7 +1795,7 @@ flowchart TD
 
 ### 4.8b Captura de Foto o Video por Comando de Voz
 
-Cuando el usuario solicita explícitamente tomar una foto o grabar un video (p. ej., "Hey Robi, toma una foto y dime qué ves" o "Hey Robi, graba un video de diez segundos y coméntame"), el robot activa la cámara, captura el contenido y lo adjunta al mensaje enviado a Gemini.
+Cuando el usuario solicita explícitamente tomar una foto o grabar un video (p. ej., "Hey Moji, toma una foto y dime qué ves" o "Hey Moji, graba un video de diez segundos y coméntame"), el robot activa la cámara, captura el contenido y lo adjunta al mensaje enviado a Gemini.
 
 #### Flujo de Captura y Envío
 
@@ -2287,7 +2287,7 @@ Dependencias principales:
 - OkHttp (WebSocket client + Certificate Pinning)
 - Retrofit + OkHttp (REST auxiliar)
 - Coil (carga de imágenes/SVG)
-- Porcupine (wake word: hey_robi_wake.ppn)
+- Porcupine (wake word: hey_moji_wake.ppn)
 - AndroidX (Lifecycle, WorkManager)
 - EncryptedSharedPreferences (seguridad)
 - CameraX (captura de frames para reconocimiento facial + foto/video por comando)
@@ -2906,7 +2906,7 @@ Mensajes del cliente (v2.0):
 - explore_mode: Iniciar modo exploración autónoma
 - face_scan_mode: Solicitar escaneo facial 360°
 - person_detected: Persona detectada con embedding
-- zone_update: Actualizar zona actual de Robi
+- zone_update: Actualizar zona actual de Moji
 - battery_alert: Alerta de batería baja
 
 Mensajes del servidor (v2.0):
@@ -2953,7 +2953,7 @@ GET /api/restore
       "people": [...],          // lista people con person_id, name, last_seen
       "face_embeddings": [...], // embeddings disponibles por persona
       "zones": [...],           // mapa mental completo
-      "memories": [...]         // memorias globales de Robi (person_id=null)
+      "memories": [...]         // memorias globales de Moji (person_id=null)
     }
 ```
 
@@ -3140,7 +3140,7 @@ stateDiagram-v2
 |---------------|------------------------|---------|
 | BOOT | IDLE | Sistema inicializado |
 | BOOT | ERROR | Fallo en inicialización |
-| IDLE | LISTENING | Wake word "Hey Robi" detectado (transición visual inmediata) |
+| IDLE | LISTENING | Wake word "Hey Moji" detectado (transición visual inmediata) |
 | IDLE | MOVING | Comando de movimiento |
 | LISTENING | SEARCHING | Cámara activada + audio capturado |
 | SEARCHING | GREETING | Rostro reconocido (ML Kit + FaceNet, score > 0.70) |
@@ -3170,7 +3170,7 @@ sequenceDiagram
     participant B as Backend (WebSocket)
     participant E as ESP32
     
-    Note over A: Usuario dice "Hey Robi"
+    Note over A: Usuario dice "Hey Moji"
     A->>S: setState(LISTENING) [INMEDIATO]
     S->>A: Update UI (👂)
     S->>E: Notificar estado (via BLE)
@@ -3870,7 +3870,7 @@ version: "3.9"
 services:
   fastapi:
     build: .
-    container_name: robi_backend
+    container_name: moji_backend
     env_file: .env
     volumes:
       - ./data:/app/data
@@ -3880,7 +3880,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: robi_nginx
+    container_name: moji_nginx
     ports:
       - "9393:9393"
     volumes:
@@ -3960,8 +3960,8 @@ anteriores → se puede iniciar el desarrollo de la app Android.
    □ Probar conexión WebSocket (wss://)
    □ Verificar que text_chunks llegan y Android TTS los reproduce
    □ Verificar emotion tags actualizan la cara del robot
-   □ Probar captura de foto ("Hey Robi, toma una foto")
-   □ Probar captura de video ("Hey Robi, graba un video de cinco segundos")
+   □ Probar captura de foto ("Hey Moji, toma una foto")
+   □ Probar captura de video ("Hey Moji, graba un video de cinco segundos")
    □ Verificar ServiceWatchdog funciona
    □ Verificar configuración de voz TTS (velocidad, tono)
    
@@ -3975,7 +3975,7 @@ anteriores → se puede iniciar el desarrollo de la app Android.
 ```
 Prueba 1 — Flujo completo de interacción (sin hardware físico):
   1. Tener el backend corriendo y la app conectada por WiFi
-  2. Decir "Hey Robi" → verificar que la cara cambia a 👂 inmediatamente
+  2. Decir "Hey Moji" → verificar que la cara cambia a 👂 inmediatamente
   3. Hacer una pregunta → verificar:
      a. Cara cambia a 🤔 al enviar al backend
      b. Emotion tag llega antes del texto → cara del robot actualiza
@@ -3985,19 +3985,19 @@ Prueba 1 — Flujo completo de interacción (sin hardware físico):
 
 Prueba 2 — Reconocimiento facial on-device:
   1. Registrar un usuario vía REST (o la propia app)
-  2. Decir "Hey Robi" y ponerse frente a la cámara
+  2. Decir "Hey Moji" y ponerse frente a la cámara
   3. Verificar que reconoce el rostro (✅ score > 0.70)
   4. Verificar saludo personalizado por TTS
 
 Prueba 3 — Nuevo usuario:
   1. No registrar ningún rostro
-  2. Decir "Hey Robi" y mostrar la cara ante la cámara
+  2. Decir "Hey Moji" y mostrar la cara ante la cámara
   3. Verificar que pregunta el nombre por TTS
   4. Responder con el nombre en voz alta
   5. Verificar que guarda el usuario y saluda con el nombre
 
 Prueba 4 — Captura de foto:
-  1. Decir "Hey Robi, toma una foto y díme qué ves"
+  1. Decir "Hey Moji, toma una foto y díme qué ves"
   2. Verificar que la cámara activa y captura la foto
   3. Verificar que Gemini describe el contenido de la foto por TTS
 
@@ -4106,7 +4106,7 @@ correctamente los protocolos de seguridad.
    □ Reconexión automática
    
 3. Test Sistema Completo:
-   □ Flujo: "Hey Robi" → búsqueda facial → saludo → comando → respuesta → acción física
+   □ Flujo: "Hey Moji" → búsqueda facial → saludo → comando → respuesta → acción física
    □ Escenario: Reconocer persona → respuesta personalizada
    □ Escenario: Comando movimiento → ejecución + telemetría
    □ Escenario: Detección emergencia → stop inmediato
@@ -4235,7 +4235,7 @@ Informativas:
 ### A. Glosario de Términos
 
 ```
-Wake Word: Palabra clave para activar el robot ("Hey Robi")
+Wake Word: Palabra clave para activar el robot ("Hey Moji")
 STT: Speech-to-Text, conversión de voz a texto
 TTS: Text-to-Speech, conversión de texto a voz
 LLM: Large Language Model, modelo de lenguaje grande

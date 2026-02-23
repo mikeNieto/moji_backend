@@ -1,4 +1,4 @@
-# nginx/nginx.conf.template — Reverse proxy HTTPS para Robi Backend
+# nginx/nginx.conf.template — Reverse proxy HTTPS para Moji Backend
 #
 # Este archivo es un TEMPLATE. nginx:alpine lo procesa al arrancar y sustituye
 # las variables ${VAR} con los valores del entorno del contenedor.
@@ -7,7 +7,7 @@
 #   SERVER_IP  — IP o hostname del servidor (viene de .env)
 #
 # Puerto externo : 9393  (HTTPS)
-# Puerto interno : 8000  (FastAPI en el contenedor "robi-backend")
+# Puerto interno : 8000  (FastAPI en el contenedor "moji-backend")
 #
 # Soporta:
 #   • TLS con certificado autofirmado (cert pinning en Android)
@@ -15,7 +15,7 @@
 #   • Cabeceras de proxy para que FastAPI vea la IP real del cliente
 
 upstream fastapi_backend {
-    server robi-backend:8000;
+    server moji-backend:8000;
     keepalive 64;
 }
 

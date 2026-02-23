@@ -1,7 +1,7 @@
 """
 services/history.py — Historial de conversación con compactación automática.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
   - Sesiones identificadas por `session_id` + `person_id` opcional.
   - Sin dependencia de `user_id`.
 
@@ -13,7 +13,7 @@ Uso:
     from services.history import ConversationHistory
     history = ConversationHistory()
 
-    await history.add_message("sess_abc", "user", "Hola Robi", person_id="persona_juan_01")
+    await history.add_message("sess_abc", "user", "Hola Moji", person_id="persona_juan_01")
     await history.add_message("sess_abc", "assistant", "[emotion:greeting] Hola!")
     msgs = history.get_history("sess_abc")
     await history.compact_if_needed("sess_abc")

@@ -1,7 +1,7 @@
 """
 Modelos de mensajes WebSocket — union discriminada con Literal.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 Mensajes del cliente (Android → Backend):
   AuthMessage, InteractionStartMessage, AudioEndMessage,
@@ -35,7 +35,7 @@ class AuthMessage(BaseModel):
 class InteractionStartMessage(BaseModel):
     type: Literal["interaction_start"]
     request_id: str
-    person_id: str | None = None  # None si Robi no ha reconocido a nadie aún
+    person_id: str | None = None  # None si Moji no ha reconocido a nadie aún
     face_recognized: bool = False
     face_confidence: float | None = None  # similitud coseno 0-1; None si no reconocido
     face_embedding: str | None = (
@@ -76,7 +76,7 @@ class VideoMessage(BaseModel):
 
 
 class ExploreModeMessage(BaseModel):
-    """Android indica que Robi debe entrar en modo exploración autónoma."""
+    """Android indica que Moji debe entrar en modo exploración autónoma."""
 
     type: Literal["explore_mode"]
     request_id: str
@@ -101,7 +101,7 @@ class PersonDetectedMessage(BaseModel):
 
 
 class ZoneUpdateMessage(BaseModel):
-    """Android informa de la zona en la que se encuentra Robi."""
+    """Android informa de la zona en la que se encuentra Moji."""
 
     type: Literal["zone_update"]
     request_id: str
@@ -139,7 +139,7 @@ class EmotionMessage(BaseModel):
     type: Literal["emotion"] = "emotion"
     request_id: str
     emotion: str  # happy | excited | sad | empathy | curious | …
-    person_identified: str | None = None  # person_id si Robi reconoció a alguien
+    person_identified: str | None = None  # person_id si Moji reconoció a alguien
     confidence: float | None = None
 
 
@@ -203,18 +203,18 @@ class WsErrorMessage(BaseModel):
 class ExplorationActionsMessage(BaseModel):
     """
     Backend → Android: instrucciones de movimiento + speech para exploración autónoma.
-    Generadas por el LLM cuando Robi entra en `explore_mode`.
+    Generadas por el LLM cuando Moji entra en `explore_mode`.
     """
 
     type: Literal["exploration_actions"] = "exploration_actions"
     request_id: str
     actions: list[dict[str, Any]] = Field(default_factory=list)
-    exploration_speech: str = ""  # texto curioso que Robi dice mientras explora
+    exploration_speech: str = ""  # texto curioso que Moji dice mientras explora
 
 
 class FaceScanActionsMessage(BaseModel):
     """
-    Backend → Android: secuencia de primitivas ESP32 para que Robi gire
+    Backend → Android: secuencia de primitivas ESP32 para que Moji gire
     buscando personas durante `face_scan_mode`.
     """
 

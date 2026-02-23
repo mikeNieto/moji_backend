@@ -184,11 +184,11 @@ class TestRestore:
         assert len(decoded) == 128
 
     async def test_restore_current_zone_flagged(self, client):
-        """La zona actual de Robi tiene is_current=True."""
+        """La zona actual de Moji tiene is_current=True."""
         from db import ZoneRow, AsyncSessionLocal
         assert AsyncSessionLocal is not None
         async with AsyncSessionLocal() as s:
-            z = ZoneRow(name="sala", category="living_area", current_robi_zone=True)
+            z = ZoneRow(name="sala", category="living_area", current_moji_zone=True)
             s.add(z)
             await s.commit()
 

@@ -145,7 +145,7 @@ class TestZonesRepository:
         z = await zones_repo.create("sala", "living_area")
         assert z.name == "sala"
         assert z.id is not None
-        assert z.current_robi_zone is False
+        assert z.current_moji_zone is False
 
     async def test_get_or_create_new(self, zones_repo):
         z, created = await zones_repo.get_or_create("cocina", "kitchen")
@@ -196,7 +196,7 @@ class TestZonesRepository:
         # z1 ya no debe ser la zona actual
         z1_check = await zones_repo.get_by_name("antes")
         assert z1_check is not None
-        assert z1_check.current_robi_zone is False
+        assert z1_check.current_moji_zone is False
 
     async def test_add_and_get_paths(self, zones_repo, session):
         z1 = await zones_repo.create("A", "living_area")
@@ -285,7 +285,7 @@ class TestMemoryRepository:
         assert len(mems) == 1
         assert mems[0].importance == 8
 
-    async def test_get_robi_context_returns_dict(self, memory_repo, session):
+    async def test_get_moji_context_returns_dict(self, memory_repo, session):
         from db import PersonRow
 
         session.add(PersonRow(person_id="p4", name="P4"))
@@ -293,14 +293,14 @@ class TestMemoryRepository:
         await memory_repo.save("general", "G1", importance=6)
         await memory_repo.save("person_fact", "PF1", person_id="p4", importance=7)
         await memory_repo.save("zone_info", "Z1", importance=5)
-        context = await memory_repo.get_robi_context(person_id="p4")
+        context = await memory_repo.get_moji_context(person_id="p4")
         assert "general" in context
         assert "person" in context
         assert "zone_info" in context
 
-    async def test_get_robi_context_no_person(self, memory_repo):
+    async def test_get_moji_context_no_person(self, memory_repo):
         await memory_repo.save("general", "G1", importance=6)
-        context = await memory_repo.get_robi_context(person_id=None)
+        context = await memory_repo.get_moji_context(person_id=None)
         assert "general" in context
 
     async def test_delete_existing(self, memory_repo):

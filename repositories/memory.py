@@ -1,11 +1,11 @@
 """
 MemoryRepository — CRUD asíncrono sobre la tabla `memories`.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
   - `user_id` reemplazado por `person_id` nullable (hay memorias generales)
   - `memory_type` expandido: experience | zone_info | person_fact | general
   - Nuevo campo `zone_id` nullable para memorias contextualizadas en lugar
-  - Nuevo método `get_robi_context()` para construir el prompt del agente
+  - Nuevo método `get_moji_context()` para construir el prompt del agente
 
 Uso:
     async with AsyncSessionLocal() as session:
@@ -16,7 +16,7 @@ Uso:
             person_id="persona_juan_01",
             importance=7,
         )
-        ctx = await repo.get_robi_context()
+        ctx = await repo.get_moji_context()
 """
 
 from datetime import datetime, timezone
@@ -110,7 +110,7 @@ class MemoryRepository:
         """
         Persiste una nueva memoria.
 
-        - `person_id` nullable: None para memorias generales de Robi.
+        - `person_id` nullable: None para memorias generales de Moji.
         - `zone_id` nullable: contexto espacial opcional.
         - `memory_type` debe ser uno de: experience | zone_info | person_fact | general.
         - Devuelve None si el contenido es detectado como privado.
@@ -169,7 +169,7 @@ class MemoryRepository:
         limit: int | None = None,
     ) -> list[Memory]:
         """
-        Devuelve memorias generales de Robi (person_id IS NULL).
+        Devuelve memorias generales de Moji (person_id IS NULL).
         Filtro opcional por tipo.
         """
         stmt = select(MemoryRow).where(MemoryRow.person_id.is_(None))
@@ -218,7 +218,7 @@ class MemoryRepository:
         result = await self._session.execute(stmt)
         return [_row_to_entity(r) for r in result.scalars().all()]
 
-    async def get_robi_context(
+    async def get_moji_context(
         self,
         *,
         person_id: str | None = None,
@@ -230,7 +230,7 @@ class MemoryRepository:
         Recupera el contexto completo que se inyecta en el prompt del agente:
 
         Claves del dict devuelto:
-          "general"      — memorias generales de Robi (experience + general)
+          "general"      — memorias generales de Moji (experience + general)
           "person"       — memorias ligadas a `person_id` (si se provee)
           "zone_info"    — memorias de tipo zone_info (mapa mental resumido)
 

@@ -1,5 +1,5 @@
 """
-routers/restore.py — Endpoint de restauración del estado de Robi v2.0.
+routers/restore.py — Endpoint de restauración del estado de Moji v2.0.
 
 GET /api/restore
     Devuelve el estado completo para que la app Android re-sincronice tras
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api", tags=["restore"])
 @router.get("/restore", response_model=RestoreResponse)
 async def restore(session: AsyncSession = Depends(get_session)) -> RestoreResponse:
     """
-    Devuelve el estado completo de Robi para re-sincronización del cliente Android.
+    Devuelve el estado completo de Moji para re-sincronización del cliente Android.
 
     - **people**: todas las personas conocidas con embeddings
     - **zones**: todas las zonas con sus paths salientes
@@ -88,7 +88,7 @@ async def restore(session: AsyncSession = Depends(get_session)) -> RestoreRespon
                 description=zone.description,
                 known_since=zone.known_since,
                 accessible=zone.accessible,
-                is_current=zone.current_robi_zone,
+                is_current=zone.current_moji_zone,
                 paths=paths_out,
             )
         )

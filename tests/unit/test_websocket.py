@@ -4,7 +4,7 @@ tests/unit/test_websocket.py — Tests unitarios para ws_handlers/ (v2.0)
 Cubre:
   - ws_handlers/protocol.py: funciones builder de mensajes
   - ws_handlers/auth.py: authenticate_websocket
-  - ws_handlers/streaming.py: _process_interaction, _load_robi_context, ws_interact flow
+  - ws_handlers/streaming.py: _process_interaction, _load_moji_context, ws_interact flow
 """
 
 import asyncio
@@ -32,7 +32,7 @@ from ws_handlers.protocol import (
     new_session_id,
 )
 from ws_handlers.streaming import (
-    _load_robi_context,
+    _load_moji_context,
     _process_interaction,
     ws_interact,
 )
@@ -292,34 +292,34 @@ class TestAuthenticateWebSocket:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECCIÓN 3 — _load_robi_context
+# SECCIÓN 3 — _load_moji_context
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-class TestLoadRobiContext:
+class TestLoadMojiContext:
     async def test_returns_empty_dict_when_db_not_initialized(self):
         """Si AsyncSessionLocal es None → devuelve {}."""
         original = db_module.AsyncSessionLocal
         db_module.AsyncSessionLocal = None
         try:
-            ctx = await _load_robi_context("persona_001")
+            ctx = await _load_moji_context("persona_001")
             assert ctx == {}
         finally:
             db_module.AsyncSessionLocal = original
 
     async def test_returns_dict_for_known_person(self):
         """Con BD inicializada y persona desconocida → devuelve dict sin error."""
-        ctx = await _load_robi_context("persona_no_existe_xyz")
+        ctx = await _load_moji_context("persona_no_existe_xyz")
         assert isinstance(ctx, dict)
 
     async def test_returns_dict_for_none_person(self):
         """person_id=None (persona desconocida) → devuelve dict sin error."""
-        ctx = await _load_robi_context(None)
+        ctx = await _load_moji_context(None)
         assert isinstance(ctx, dict)
 
     async def test_returns_dict_with_expected_keys(self):
         """El contexto devuelto contiene claves estándar cuando existen memorias."""
-        ctx = await _load_robi_context(None)
+        ctx = await _load_moji_context(None)
         # Puede ser vacío, pero si tiene claves deben ser de los tipos esperados
         for key in ctx:
             assert key in ("general", "person", "zone_info")
@@ -330,7 +330,7 @@ class TestLoadRobiContext:
             "ws_handlers.streaming.db_module.AsyncSessionLocal",
             side_effect=RuntimeError("db error"),
         ):
-            ctx = await _load_robi_context("persona_001")
+            ctx = await _load_moji_context("persona_001")
             assert ctx == {}
 
 
@@ -366,7 +366,7 @@ class TestProcessInteraction:
             patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -489,7 +489,7 @@ class TestProcessInteraction:
         with (
             patch("ws_handlers.streaming.run_agent_stream", failing_stream),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -552,7 +552,7 @@ class TestProcessInteractionMedia:
             patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
             patch("ws_handlers.streaming._save_history_bg", save_history_mock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -628,7 +628,7 @@ class TestProcessInteractionMedia:
             ),
             patch("ws_handlers.streaming._save_history_bg", save_history_mock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -686,7 +686,7 @@ class TestContextualEmojisAndActions:
             patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -832,7 +832,7 @@ class TestWsInteract:
                         {
                             "type": "text",
                             "request_id": "req-full",
-                            "content": "Hola Robi",
+                            "content": "Hola Moji",
                         }
                     ),
                     "bytes": None,
@@ -849,7 +849,7 @@ class TestWsInteract:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -957,7 +957,7 @@ class TestWsInteract:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),

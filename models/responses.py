@@ -75,7 +75,7 @@ class RestoreZoneResponse(BaseModel):
 
 
 class RestoreMemoryResponse(BaseModel):
-    """Recuerdo general de Robi."""
+    """Recuerdo general de Moji."""
 
     id: int | None = None
     memory_type: str  # experience | zone_info | person_fact | general

@@ -1,7 +1,7 @@
 """
 services/movement.py — Construcción de secuencias de movimiento para el ESP32.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 5 primitivas ESP32:
   turn_right_deg:GRADOS:dur_ms   — giro derecha N grados

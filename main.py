@@ -49,9 +49,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Robi Backend",
+    title="Moji Backend",
     version="2.0",
-    description="Backend de Robi — Amigo Familiar | FastAPI + WebSocket + Gemini",
+    description="Backend de Moji",
     lifespan=lifespan,
     # Deshabilitar docs en producción si se desea
     docs_url="/docs" if not settings.is_production else None,

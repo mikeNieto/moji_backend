@@ -116,7 +116,7 @@ class TestEntities:
     def test_zone_defaults(self):
         z = Zone(name="sala", category="living_area")
         assert z.accessible is True
-        assert z.current_robi_zone is False
+        assert z.current_moji_zone is False
         assert z.description == ""
 
     def test_zone_path_fields(self):

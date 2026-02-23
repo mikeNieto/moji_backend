@@ -76,7 +76,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -93,7 +93,7 @@ class TestWebSocketFlow:
                     {
                         "type": "text",
                         "request_id": "req-integration-001",
-                        "content": "Hola Robi",
+                        "content": "Hola Moji",
                     }
                 )
 
@@ -131,7 +131,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -180,7 +180,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -229,7 +229,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -265,7 +265,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -337,7 +337,7 @@ class TestWebSocketFlow:
             patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
-                "ws_handlers.streaming._load_robi_context",
+                "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -417,7 +417,7 @@ class TestWebSocketFlow:
                 ),
                 patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
                 patch(
-                    "ws_handlers.streaming._load_robi_context",
+                    "ws_handlers.streaming._load_moji_context",
                     new_callable=AsyncMock,
                     return_value={},
                 ),

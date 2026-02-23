@@ -1,14 +1,14 @@
 """
 Base de datos — SQLAlchemy async con aiosqlite.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
 Tablas:
-  people               — personas conocidas por Robi
+  people               — personas conocidas por Moji
   face_embeddings      — embeddings faciales (N por persona)
   zones                — mapa mental de la casa (nodos)
   zone_paths           — caminos entre zonas (aristas)
-  memories             — recuerdos de Robi (person_id nullable, zone_id nullable)
+  memories             — recuerdos de Moji (person_id nullable, zone_id nullable)
   conversation_history — historial de mensajes por sesión
 
 Uso:
@@ -141,7 +141,7 @@ class ZoneRow(Base):
         nullable=False, server_default=func.now()
     )
     accessible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    current_robi_zone: Mapped[bool] = mapped_column(
+    current_moji_zone: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )  # solo una fila puede ser True a la vez
 

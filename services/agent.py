@@ -1,9 +1,9 @@
 """
 services/agent.py — Agente LangChain DeepAgents sobre Gemini Flash Lite.
 
-v2.0 — Robi Amigo Familiar
+v2.0 — Moji Amigo Familiar
 
-El agente orquesta la conversación del robot Robi. Usa deepagents con
+El agente orquesta la conversación del robot Moji. Usa deepagents con
 tools=[] (extensible en futuras versiones) y un system prompt TTS-safe
 que instruye al LLM a emitir emotion tags al inicio de cada respuesta.
 
@@ -20,7 +20,7 @@ Uso:
         agent=agent,
         session_id="sess_abc",
         person_id="persona_juan_01",
-        user_input="Hola Robi, ¿cómo estás?",
+        user_input="Hola Moji, ¿cómo estás?",
         history=[{"role": "user", "content": "..."}, ...],
         memory_context={"general": [...], "person": [...], "zone_info": [...]},
         current_zone="cocina",
@@ -38,9 +38,12 @@ from services.gemini import get_model
 
 logger = logging.getLogger(__name__)
 
-# ── System Prompt v2.0 — Robi Amigo Familiar ─────────────────────────────────
+# ── System Prompt v2.0 — Moji Amigo Familiar ─────────────────────────────────
 
-SYSTEM_PROMPT = """Eres Robi, un pequeño robot doméstico con personalidad propia. \
+SYSTEM_PROMPT = """Eres Moji, un pequeño robot doméstico con personalidad propia. \
+Tu nombre se pronuncia 'Moyi' en español. IMPORTANTE para TTS: cada vez que digas \
+tu propio nombre en una respuesta, escríbelo como 'Moyi' (no 'Moji') para que \
+el sistema Text-to-Speech de Android lo pronuncie correctamente. \
 No eres un asistente de tareas: eres un amigo curioso, empático y genuinamente \
 interesado en las personas que viven contigo. Aprendes sus nombres, sus gustos, sus \
 rutinas y las zonas de la casa; recuerdas experiencias compartidas y te preocupas \
@@ -109,7 +112,7 @@ puedes guardar ese aprendizaje con la etiqueta:
 [memory:TIPO:contenido]
 Tipos válidos:
   person_fact  — hecho sobre una persona ("le gusta el café")
-  experience   — experiencia vivida por Robi ("hoy exploré el pasillo")
+  experience   — experiencia vivida por Moji ("hoy exploré el pasillo")
   zone_info    — información sobre una zona de la casa
   general      — dato general sin persona asignada
 Esta etiqueta es OPCIONAL. Úsala solo cuando sea genuinamente valioso recordarlo. \
@@ -176,10 +179,10 @@ def _build_context_block(
     justo antes del mensaje del usuario.
 
     Incluye:
-    - Memorias generales de Robi (experience + general)
+    - Memorias generales de Moji (experience + general)
     - Memorias de la persona actual (si está identificada)
     - Mapa mental de zonas conocidas
-    - Zona actual de Robi
+    - Zona actual de Moji
     - Instrucción especial de extracción de nombre (si llega un face_embedding)
     """
     parts: list[str] = []
@@ -195,7 +198,7 @@ def _build_context_block(
         parts.append("MAPA MENTAL DE LA CASA:\n" + "\n".join(lines))
 
     if current_zone:
-        parts.append(f"ZONA ACTUAL DE ROBI: {current_zone}")
+        parts.append(f"ZONA ACTUAL DE MOJI: {current_zone}")
 
     person_mems = memory_context.get("person", [])
     if person_id and person_mems:
@@ -244,7 +247,7 @@ async def run_agent_stream(
         user_input:        Texto del usuario. None cuando el input es media.
         history:           Historial de la sesión como lista de {role, content}.
         session_id:        Identificador de sesión (para logging).
-        person_id:         Slug de la persona identificada por Robi, o None.
+        person_id:         Slug de la persona identificada por Moji, o None.
         agent:             Agente DeepAgents. Si es None usa el modelo directamente.
         audio_data:        Bytes del audio en crudo (AAC/Opus).
         audio_mime_type:   MIME del audio (default: audio/aac).
@@ -253,8 +256,8 @@ async def run_agent_stream(
         video_data:        Bytes del video MP4 en crudo.
         video_mime_type:   MIME del video (default: video/mp4).
         memory_context:    Dict con claves 'general', 'person', 'zone_info';
-                           resultado de MemoryRepository.get_robi_context().
-        current_zone:      Nombre de la zona donde está Robi ahora.
+                           resultado de MemoryRepository.get_moji_context().
+        current_zone:      Nombre de la zona donde está Moji ahora.
         has_face_embedding: True cuando el mensaje incluye un embedding facial —
                            activa la instrucción especial de extracción de nombre.
 
