@@ -235,3 +235,25 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
         expanded.extend(expand_step(step))
 
     return expanded, text[m.end() :]
+
+
+# ── Helpers para structured output ───────────────────────────────────────────
+
+
+def action_steps_from_list(steps: list[str]) -> list[dict]:
+    """
+    Convierte una lista de strings de pasos (del campo actions de MojiResponse)
+    en steps expandidos a primitivas ESP32, listos para build_move_sequence().
+
+    Cada string usa el mismo formato que parse_actions_tag internamente:
+      "wave:800", "nod:400", "turn_right_deg:45:500", "led_color:255:0:0"
+
+    Ejemplo:
+        action_steps_from_list(["wave:800", "nod:400"])
+        # → lista de steps primitivos expandidos
+    """
+    if not steps:
+        return []
+    fake_tag = f"[actions:{'|'.join(steps)}]"
+    expanded, _ = parse_actions_tag(fake_tag)
+    return expanded

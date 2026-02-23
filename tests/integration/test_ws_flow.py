@@ -1,10 +1,10 @@
 """
-tests/integration/test_ws_flow.py — Test de integración del WebSocket /ws/interact (v2.0).
+tests/integration/test_ws_flow.py — Test de integración del WebSocket /ws/interact (v3.0).
 
 Levanta la app completa con TestClient y verifica el flujo WebSocket end-to-end:
-  auth → interaction_start → text/audio_end → emotion + text_chunks + stream_end
+  auth → interaction_start → text/audio_end → emotion + text_chunk + response_meta + stream_end
 
-El agente se mockea para evitar llamadas reales a Gemini durante las pruebas.
+El agente se mockea (run_agent) para evitar llamadas reales a Gemini durante las pruebas.
 
 Ejecución:
     uv run pytest tests/integration/ -v
@@ -22,19 +22,25 @@ os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from main import app  # noqa: E402
+from services.agent import MojiResponse  # noqa: E402
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
-def make_agent_stream(*chunks: str):
-    """Devuelve una función async generator que emite los chunks dados."""
-
-    async def _stream(*args, **kwargs):
-        for chunk in chunks:
-            yield chunk
-
-    return _stream
+def make_mock_response(**kwargs) -> MojiResponse:
+    """Crea un MojiResponse con valores por defecto, sobrescribibles via kwargs."""
+    defaults = {
+        "emotion": "neutral",
+        "emojis": ["1F642"],
+        "actions": [],
+        "response_text": "Hola!",
+        "memories": [],
+        "person_name": None,
+        "media_summary": None,
+    }
+    defaults.update(kwargs)
+    return MojiResponse(**defaults)
 
 
 @pytest.fixture()
@@ -51,7 +57,9 @@ class TestWebSocketFlow:
     def test_auth_valid_key(self, ws_app):
         """Auth con API Key válida → auth_ok con session_id."""
         with ws_app.websocket_connect("/ws/interact") as ws:
-            ws.send_json({"type": "auth", "api_key": "test-api-key-for-unit-tests-only"})
+            ws.send_json(
+                {"type": "auth", "api_key": "test-api-key-for-unit-tests-only"}
+            )
             msg = ws.receive_json()
             assert msg["type"] == "auth_ok"
             assert isinstance(msg["session_id"], str)
@@ -69,18 +77,23 @@ class TestWebSocketFlow:
 
     def test_text_interaction_full_flow(self, ws_app):
         """Flujo completo: auth → text → emotion + text_chunks + response_meta + stream_end."""
-        mock_stream = make_agent_stream("[emotion:happy] Hola! ¿Cómo estás?")
-
         with (
-            patch("ws_handlers.streaming.run_agent_stream", mock_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="happy", response_text="Hola! ¿Cómo estás?"
+                ),
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -124,18 +137,23 @@ class TestWebSocketFlow:
 
     def test_interaction_start_with_person_id_then_text(self, ws_app):
         """interaction_start con person_id setea el contexto; text lo procesa."""
-        mock_stream = make_agent_stream("[emotion:greeting] ¡Bienvenido, Ana!")
-
         with (
-            patch("ws_handlers.streaming.run_agent_stream", mock_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="greeting", response_text="¡Bienvenido, Ana!"
+                ),
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -173,18 +191,23 @@ class TestWebSocketFlow:
 
     def test_interaction_start_without_person_id(self, ws_app):
         """interaction_start sin person_id (persona desconocida) → funciona sin error."""
-        mock_stream = make_agent_stream("[emotion:curious] Hola, ¿quién eres?")
-
         with (
-            patch("ws_handlers.streaming.run_agent_stream", mock_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="curious", response_text="Hola, ¿quién eres?"
+                ),
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -221,19 +244,24 @@ class TestWebSocketFlow:
                 assert "stream_end" in types
 
     def test_no_emotion_tag_defaults_neutral(self, ws_app):
-        """Respuesta sin emotion tag → se envía emotion='neutral'."""
-        mock_stream = make_agent_stream("Aquí la respuesta sin tag de emoción.")
-
+        """Respuesta con emotion='neutral' (default) → se envía emotion='neutral'."""
         with (
-            patch("ws_handlers.streaming.run_agent_stream", mock_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="neutral", response_text="Aquí la respuesta."
+                ),
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -257,19 +285,26 @@ class TestWebSocketFlow:
                 assert emotion_msgs[0]["emotion"] == "neutral"
 
     def test_response_meta_has_emojis(self, ws_app):
-        """response_meta incluye emojis del emotion tag."""
-        mock_stream = make_agent_stream("[emotion:excited] ¡Fantástico!")
-
+        """response_meta incluye emojis de MojiResponse."""
         with (
-            patch("ws_handlers.streaming.run_agent_stream", mock_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="excited",
+                    emojis=["1F929", "1F389"],
+                    response_text="¡Fantástico!",
+                ),
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -278,7 +313,11 @@ class TestWebSocketFlow:
                 ws.receive_json()  # auth_ok
 
                 ws.send_json(
-                    {"type": "text", "request_id": "req-emojis", "content": "¡Qué emoción!"}
+                    {
+                        "type": "text",
+                        "request_id": "req-emojis",
+                        "content": "¡Qué emoción!",
+                    }
                 )
 
                 received = []
@@ -320,28 +359,30 @@ class TestWebSocketFlow:
 
     def test_multiple_interactions_in_session(self, ws_app):
         """Múltiples interacciones en la misma sesión → cada una recibe stream_end."""
-        responses = [
-            "[emotion:happy] Primera respuesta.",
-            "[emotion:neutral] Segunda respuesta.",
-        ]
         call_count = {"n": 0}
+        mock_responses = [
+            make_mock_response(emotion="happy", response_text="Primera respuesta."),
+            make_mock_response(emotion="neutral", response_text="Segunda respuesta."),
+        ]
 
-        async def multi_stream(*args, **kwargs):
+        async def multi_run(*args, **kwargs):
             n = call_count["n"]
             call_count["n"] += 1
-            resp = responses[n] if n < len(responses) else "[emotion:neutral] Hola."
-            yield resp
+            return (
+                mock_responses[n] if n < len(mock_responses) else make_mock_response()
+            )
 
         with (
-            patch("ws_handlers.streaming.run_agent_stream", multi_stream),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
+            patch("ws_handlers.streaming.run_agent", side_effect=multi_run),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+            patch(
+                "ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock
+            ),
         ):
             with ws_app.websocket_connect("/ws/interact") as ws:
                 ws.send_json(
@@ -406,14 +447,13 @@ class TestWebSocketFlow:
             # No error de protocolo esperado; la interacción fue válida
             # La respuesta puede no venir si es solo un update de estado
             # Solo verificamos que la conexión sigue viva enviando un ping type
-            ws.send_json(
-                {"type": "text", "request_id": "req-afterperson", "content": "Hola"}
-            )
-
             with (
                 patch(
-                    "ws_handlers.streaming.run_agent_stream",
-                    make_agent_stream("[emotion:happy] Hola Ana!"),
+                    "ws_handlers.streaming.run_agent",
+                    new_callable=AsyncMock,
+                    return_value=make_mock_response(
+                        emotion="happy", response_text="Hola Ana!"
+                    ),
                 ),
                 patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
                 patch(
@@ -421,6 +461,15 @@ class TestWebSocketFlow:
                     new_callable=AsyncMock,
                     return_value={},
                 ),
-                patch("ws_handlers.streaming.compact_memories_async", new_callable=AsyncMock),
+                patch(
+                    "ws_handlers.streaming.compact_memories_async",
+                    new_callable=AsyncMock,
+                ),
             ):
-                pass  # already sent; just ensure no protocol error
+                ws.send_json(
+                    {"type": "text", "request_id": "req-afterperson", "content": "Hola"}
+                )
+                for _ in range(20):
+                    msg = ws.receive_json()
+                    if msg["type"] == "stream_end":
+                        break

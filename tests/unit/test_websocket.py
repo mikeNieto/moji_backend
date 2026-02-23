@@ -1,5 +1,5 @@
 """
-tests/unit/test_websocket.py — Tests unitarios para ws_handlers/ (v2.0)
+tests/unit/test_websocket.py — Tests unitarios para ws_handlers/ (v3.0)
 
 Cubre:
   - ws_handlers/protocol.py: funciones builder de mensajes
@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketState
 
 import db as db_module
 from db import init_db
+from services.agent import MojiResponse
 from services.history import ConversationHistory
 from ws_handlers.auth import authenticate_websocket
 from ws_handlers.protocol import (
@@ -315,35 +316,48 @@ class TestLoadMojiContext:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECCIÓN 4 — _process_interaction (streaming + tags)
+# SECCIÓN 4 — _process_interaction (structured output)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def make_async_gen(*chunks: str):
-    """Crea un async generator que yield los chunks dados."""
-
-    async def _gen(*args, **kwargs):
-        for c in chunks:
-            yield c
-
-    return _gen
+def make_mock_response(**kwargs) -> MojiResponse:
+    """
+    Crea un MojiResponse con valores por defecto, sobrescribibles via kwargs.
+    """
+    defaults = {
+        "emotion": "neutral",
+        "emojis": ["1F642"],
+        "actions": [],
+        "response_text": "Hola!",
+        "memories": [],
+        "person_name": None,
+        "media_summary": None,
+    }
+    defaults.update(kwargs)
+    return MojiResponse(**defaults)
 
 
 class TestProcessInteraction:
     async def _run_process(
         self,
-        *chunks: str,
+        response: MojiResponse | None = None,
         ws: MagicMock | None = None,
         person_id: str | None = "person_test",
     ) -> MagicMock:
-        """Helper: lanza _process_interaction con el mock de agente dado."""
+        """Helper: lanza _process_interaction con el MojiResponse mock dado."""
         if ws is None:
             ws = make_mock_ws()
+        if response is None:
+            response = make_mock_response()
 
         history_service = ConversationHistory()
 
         with (
-            patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=response,
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
@@ -362,50 +376,45 @@ class TestProcessInteraction:
                 input_type="text",
                 history_service=history_service,
                 session_id="sess-test",
-                agent=None,
             )
             await asyncio.sleep(0)
         return ws
 
-    async def test_emotion_tag_happy(self):
-        """El agent emite [emotion:happy] → se envía emotion con 'happy'."""
-        ws = await self._run_process("[emotion:happy] Hola amigo!")
-
+    async def test_emotion_happy_sent(self):
+        """run_agent retorna emotion='happy' → se envía emotion con 'happy'."""
+        ws = await self._run_process(
+            response=make_mock_response(emotion="happy", response_text="Hola amigo!")
+        )
         sent_texts = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         emotions = [m for m in sent_texts if m["type"] == "emotion"]
         assert len(emotions) == 1
         assert emotions[0]["emotion"] == "happy"
 
-    async def test_emotion_tag_precedes_text_chunk(self):
-        """El mensaje 'emotion' se envía ANTES del primer 'text_chunk'."""
-        ws = await self._run_process("[emotion:neutral] Hola!")
-
+    async def test_emotion_precedes_text_chunk(self):
+        """El mensaje 'emotion' se envía ANTES del 'text_chunk'."""
+        ws = await self._run_process(
+            response=make_mock_response(emotion="neutral", response_text="Hola!")
+        )
         types_in_order = [
             json.loads(c[0][0])["type"] for c in ws.send_text.call_args_list
         ]
         if "emotion" in types_in_order and "text_chunk" in types_in_order:
             assert types_in_order.index("emotion") < types_in_order.index("text_chunk")
 
-    async def test_no_emotion_tag_defaults_to_neutral(self):
-        """Sin emotion tag → se emite emotion='neutral'."""
-        ws = await self._run_process("Buenas noches, estoy bien.")
-
+    async def test_neutral_emotion_default(self):
+        """Respuesta con emotion='neutral' → se emite neutral."""
+        ws = await self._run_process(
+            response=make_mock_response(emotion="neutral", response_text="Hola.")
+        )
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         emotions = [m for m in sent if m["type"] == "emotion"]
         assert emotions[0]["emotion"] == "neutral"
 
-    async def test_emotion_tag_split_across_chunks(self):
-        """Emotion tag partido en varios chunks → se detecta correctamente."""
-        ws = await self._run_process("[emot", "ion:sad]", " Lo siento.")
-
-        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        emotions = [m for m in sent if m["type"] == "emotion"]
-        assert emotions[0]["emotion"] == "sad"
-
-    async def test_text_chunks_sent(self):
-        """Después de la emoción se envían text_chunks."""
-        ws = await self._run_process("[emotion:happy] Parte uno.", " Parte dos.")
-
+    async def test_text_chunk_sent(self):
+        """response_text se envía como text_chunk."""
+        ws = await self._run_process(
+            response=make_mock_response(response_text="Parte uno.")
+        )
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         chunks = [m["text"] for m in sent if m["type"] == "text_chunk"]
         full_text = "".join(chunks)
@@ -413,17 +422,17 @@ class TestProcessInteraction:
 
     async def test_stream_end_is_sent(self):
         """Siempre se envía stream_end al final."""
-        ws = await self._run_process("[emotion:neutral] Hola.")
-
+        ws = await self._run_process()
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         ends = [m for m in sent if m["type"] == "stream_end"]
         assert len(ends) == 1
         assert ends[0]["request_id"] == "req-test"
 
     async def test_response_meta_is_sent(self):
-        """Se envía response_meta con emojis antes del stream_end."""
-        ws = await self._run_process("[emotion:excited] ¡Qué emoción!")
-
+        """Se envía response_meta con emojis."""
+        ws = await self._run_process(
+            response=make_mock_response(emotion="excited", emojis=["1F929"])
+        )
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         metas = [m for m in sent if m["type"] == "response_meta"]
         assert len(metas) == 1
@@ -432,42 +441,36 @@ class TestProcessInteraction:
 
     async def test_response_meta_before_stream_end(self):
         """response_meta siempre precede a stream_end."""
-        ws = await self._run_process("[emotion:neutral] OK.")
-
+        ws = await self._run_process()
         types = [json.loads(c[0][0])["type"] for c in ws.send_text.call_args_list]
         assert types.index("response_meta") < types.index("stream_end")
 
     async def test_person_identified_in_emotion(self):
         """Con person_id definido, emotion incluye person_identified."""
         ws = await self._run_process(
-            "[emotion:happy] Hola Ana!", person_id="persona_ana_001"
+            response=make_mock_response(emotion="happy", response_text="Hola Ana!"),
+            person_id="persona_ana_001",
         )
-
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         emotions = [m for m in sent if m["type"] == "emotion"]
         assert emotions[0].get("person_identified") == "persona_ana_001"
 
-    async def test_empty_stream_emits_neutral(self):
-        """Stream vacío → se emite emotion neutral y stream_end."""
-        ws = await self._run_process()
-
+    async def test_empty_response_text_no_text_chunk(self):
+        """Sin texto en response_text → no se envía text_chunk."""
+        ws = await self._run_process(response=make_mock_response(response_text=""))
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        emotions = [m for m in sent if m["type"] == "emotion"]
-        ends = [m for m in sent if m["type"] == "stream_end"]
-        assert len(emotions) == 1
-        assert len(ends) == 1
+        chunks = [m for m in sent if m["type"] == "text_chunk"]
+        assert len(chunks) == 0
 
     async def test_agent_error_sends_error_message(self):
-        """Si el agente lanza excepción → se envía error y no stream_end."""
+        """Si run_agent lanza excepción → se envía error AGENT_ERROR."""
         ws = make_mock_ws()
-
-        async def failing_stream(*args, **kwargs):
-            raise RuntimeError("agente caído")
-            yield  # pragma: no cover
-
         history_service = ConversationHistory()
         with (
-            patch("ws_handlers.streaming.run_agent_stream", failing_stream),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                side_effect=RuntimeError("agente caído"),
+            ),
             patch(
                 "ws_handlers.streaming._load_moji_context",
                 new_callable=AsyncMock,
@@ -485,7 +488,6 @@ class TestProcessInteraction:
                 input_type="text",
                 history_service=history_service,
                 session_id="sess-err",
-                agent=None,
             )
 
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
@@ -493,20 +495,30 @@ class TestProcessInteraction:
         assert len(errors) >= 1
         assert errors[0]["error_code"] == "AGENT_ERROR"
 
-    async def test_memory_tag_stripped_from_response_meta(self):
-        """[memory:...] es eliminado del response_meta.response_text."""
+    async def test_memory_entries_not_in_response_text(self):
+        """Las memories del structured output se persisten pero no contaminan response_text."""
+        from services.agent import MemoryEntry
+
         ws = await self._run_process(
-            "[emotion:happy] ¡Hola! [memory:preference:Le gusta el café] Hasta luego."
+            response=make_mock_response(
+                response_text="¡Qué bueno saberlo!",
+                memories=[
+                    MemoryEntry(memory_type="person_fact", content="Le gusta el café")
+                ],
+            )
         )
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next((m for m in sent if m["type"] == "response_meta"), None)
         assert meta is not None
-        assert "[memory:" not in meta["response_text"]
+        assert "memory" not in meta["response_text"]
+        assert meta["response_text"] == "¡Qué bueno saberlo!"
 
-    async def test_person_name_tag_reflected_in_response_meta(self):
-        """[person_name:Ana] → response_meta.person_name contiene 'Ana'."""
+    async def test_person_name_in_response_meta(self):
+        """person_name del structured output → response_meta.person_name."""
         ws = await self._run_process(
-            "[emotion:happy][emojis:1F600] Hola [person_name:Ana], ¿cómo estás?"
+            response=make_mock_response(
+                emotion="happy", response_text="Hola Ana!", person_name="Ana"
+            )
         )
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         metas = [m for m in sent if m["type"] == "response_meta"]
@@ -520,16 +532,22 @@ class TestProcessInteraction:
 
 
 class TestProcessInteractionMedia:
-    """Tests del flujo media: extracción de [media_summary:] y uso en historial."""
+    """Tests del flujo media: campo media_summary y uso en historial."""
 
-    async def _run_process_audio(self, *chunks: str) -> tuple[MagicMock, AsyncMock]:
+    async def _run_process_audio(
+        self, response: MojiResponse
+    ) -> tuple[MagicMock, AsyncMock]:
         """Helper: lanza _process_interaction con audio_data y devuelve (ws, save_history_mock)."""
         ws = make_mock_ws()
         history_service = ConversationHistory()
         save_history_mock = AsyncMock()
 
         with (
-            patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=response,
+            ),
             patch("ws_handlers.streaming._save_history_bg", save_history_mock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
@@ -549,62 +567,58 @@ class TestProcessInteractionMedia:
                 audio_data=b"\x00\x01\x02",
                 history_service=history_service,
                 session_id="sess-test",
-                agent=None,
             )
             await asyncio.sleep(0)
 
         return ws, save_history_mock
 
-    async def test_media_summary_tag_not_sent_as_text_chunk(self):
-        """El tag [media_summary:...] NO debe aparecer en los text_chunks enviados."""
-        ws, _ = await self._run_process_audio(
-            "[emotion:happy][media_summary: el usuario dice buenos días] ¡Buenos días!"
+    async def test_media_summary_not_in_text_chunk(self):
+        """media_summary del structured output NO aparece en text_chunk."""
+        response = make_mock_response(
+            emotion="happy",
+            response_text="¡Buenos días!",
+            media_summary="el usuario dice buenos días",
         )
+        ws, _ = await self._run_process_audio(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
-        assert "[media_summary:" not in chunks_text
+        assert "media_summary" not in chunks_text
         assert "¡Buenos días!" in chunks_text
 
     async def test_media_summary_used_as_user_history(self):
-        """El contenido del [media_summary:...] se usa como mensaje del usuario en el historial."""
-        _, save_history_mock = await self._run_process_audio(
-            "[emotion:happy][media_summary: el usuario saluda y pregunta cómo está] ¡Hola!"
+        """El campo media_summary se usa como mensaje del usuario en el historial."""
+        response = make_mock_response(
+            emotion="happy",
+            response_text="¡Hola!",
+            media_summary="el usuario saluda y pregunta cómo está",
         )
+        _, save_history_mock = await self._run_process_audio(response)
         assert save_history_mock.called
         kwargs = save_history_mock.call_args.kwargs
         assert kwargs["user_message"] == "el usuario saluda y pregunta cómo está"
 
-    async def test_media_summary_split_across_chunks(self):
-        """El tag [media_summary:...] llegando partido en varios chunks se extrae correctamente."""
-        ws, save_history_mock = await self._run_process_audio(
-            "[emotion:neutral][media_summary: ",
-            "usuario envía nota de voz",
-            "] Entendido.",
+    async def test_fallback_placeholder_when_no_summary(self):
+        """Si media_summary es None el historial usa '[audio]'."""
+        response = make_mock_response(
+            emotion="happy",
+            response_text="Sin resumen.",
+            media_summary=None,
         )
-        kwargs = save_history_mock.call_args.kwargs
-        assert kwargs["user_message"] == "usuario envía nota de voz"
-        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
-        assert "[media_summary:" not in chunks_text
-
-    async def test_fallback_placeholder_when_no_summary_tag(self):
-        """Si el LLM no emite [media_summary:...] el historial usa '[audio]'."""
-        _, save_history_mock = await self._run_process_audio(
-            "[emotion:happy] El audio no tenía etiqueta de resumen."
-        )
+        _, save_history_mock = await self._run_process_audio(response)
         kwargs = save_history_mock.call_args.kwargs
         assert kwargs["user_message"] == "[audio]"
 
-    async def test_text_input_not_affected(self):
-        """Las interacciones de texto siguen usando user_input como mensaje de historial."""
+    async def test_text_input_uses_user_input_for_history(self):
+        """Las interacciones de texto usan user_input como mensaje de historial."""
         ws = make_mock_ws()
         history_service = ConversationHistory()
         save_history_mock = AsyncMock()
 
         with (
             patch(
-                "ws_handlers.streaming.run_agent_stream",
-                make_async_gen("[emotion:neutral] OK."),
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(response_text="OK."),
             ),
             patch("ws_handlers.streaming._save_history_bg", save_history_mock),
             patch(
@@ -624,28 +638,33 @@ class TestProcessInteractionMedia:
                 input_type="text",
                 history_service=history_service,
                 session_id="sess-test",
-                agent=None,
             )
             await asyncio.sleep(0)
 
         kwargs = save_history_mock.call_args.kwargs
         assert kwargs["user_message"] == "¿Qué hora es?"
 
-    async def test_emotion_still_sent_for_audio(self):
-        """Con audio, el tag [emotion:...] se extrae y envía correctamente."""
-        ws, _ = await self._run_process_audio(
-            "[emotion:excited][media_summary: usuario pide canción] ¡Vamos!"
+    async def test_emotion_sent_for_audio(self):
+        """Con audio, el campo emotion se envía correctamente."""
+        response = make_mock_response(
+            emotion="excited",
+            response_text="¡Vamos!",
+            media_summary="usuario pide canción",
         )
+        ws, _ = await self._run_process_audio(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         emotions = [m for m in sent if m["type"] == "emotion"]
         assert len(emotions) == 1
         assert emotions[0]["emotion"] == "excited"
 
-    async def test_stream_end_still_sent_for_audio(self):
+    async def test_stream_end_sent_for_audio(self):
         """Con audio, stream_end se envía al final."""
-        ws, _ = await self._run_process_audio(
-            "[emotion:neutral][media_summary: audio de prueba] Respuesta."
+        response = make_mock_response(
+            emotion="neutral",
+            response_text="Respuesta.",
+            media_summary="audio de prueba",
         )
+        ws, _ = await self._run_process_audio(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         ends = [m for m in sent if m["type"] == "stream_end"]
         assert len(ends) == 1
@@ -657,13 +676,17 @@ class TestProcessInteractionMedia:
 
 
 class TestContextualEmojisAndActions:
-    """Tests para la extracción de [emojis:...] y [actions:...] del stream."""
+    """Tests para los campos emojis y actions del MojiResponse."""
 
-    async def _run(self, *chunks: str) -> MagicMock:
+    async def _run(self, response: MojiResponse) -> MagicMock:
         ws = make_mock_ws()
         history_service = ConversationHistory()
         with (
-            patch("ws_handlers.streaming.run_agent_stream", make_async_gen(*chunks)),
+            patch(
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=response,
+            ),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
@@ -682,34 +705,45 @@ class TestContextualEmojisAndActions:
                 input_type="text",
                 history_service=history_service,
                 session_id="sess-test",
-                agent=None,
             )
             await asyncio.sleep(0)
         return ws
 
     async def test_contextual_emojis_in_response_meta(self):
-        """[emojis:1F1EB-1F1F7,2708] → response_meta contiene esos códigos."""
-        ws = await self._run(
-            "[emotion:excited][emojis:1F1EB-1F1F7,2708] Francia tiene la Torre Eiffel."
+        """emojis del structured output → response_meta contiene esos códigos."""
+        response = make_mock_response(
+            emotion="excited",
+            emojis=["1F1EB-1F1F7", "2708"],
+            response_text="Francia tiene la Torre Eiffel.",
         )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next(m for m in sent if m["type"] == "response_meta")
         assert "1F1EB-1F1F7" in meta["expression"]["emojis"]
         assert "2708" in meta["expression"]["emojis"]
 
-    async def test_contextual_emojis_tag_not_in_text_chunks(self):
-        """[emojis:...] NO debe aparecer en los text_chunks enviados al cliente."""
-        ws = await self._run("[emotion:happy][emojis:1F600,1F525] Respuesta normal.")
+    async def test_emojis_not_in_text_chunk(self):
+        """Los codepoints de emojis NO deben aparecer en los text_chunks."""
+        response = make_mock_response(
+            emotion="happy",
+            emojis=["1F600", "1F525"],
+            response_text="Respuesta normal.",
+        )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
-        assert "[emojis:" not in chunks_text
+        assert "1F600" not in chunks_text
         assert "Respuesta normal." in chunks_text
 
     async def test_actions_in_response_meta(self):
-        """[actions:wave:800|nod:300] → response_meta.actions contiene la secuencia."""
-        ws = await self._run(
-            "[emotion:greeting][emojis:1F44B][actions:wave:800|nod:300] ¡Hola!"
+        """actions=['wave:800','nod:300'] → response_meta.actions contiene la secuencia."""
+        response = make_mock_response(
+            emotion="greeting",
+            emojis=["1F44B"],
+            actions=["wave:800", "nod:300"],
+            response_text="¡Hola!",
         )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next(m for m in sent if m["type"] == "response_meta")
         assert len(meta["actions"]) == 1
@@ -717,51 +751,34 @@ class TestContextualEmojisAndActions:
         assert seq["step_count"] >= 1
         assert seq["total_duration_ms"] >= 800
 
-    async def test_actions_tag_not_in_text_chunks(self):
-        """[actions:...] NO debe aparecer en los text_chunks."""
-        ws = await self._run(
-            "[emotion:greeting][emojis:1F44B][actions:wave:800] ¡Hola!"
-        )
-        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
-        assert "[actions:" not in chunks_text
-        assert "¡Hola!" in chunks_text
-
     async def test_no_contextual_emojis_falls_back_to_emotion(self):
-        """Sin [emojis:...] el response_meta usa los emojis de emoción."""
-        ws = await self._run("[emotion:happy] Respuesta sin emojis contextuales.")
+        """Sin emojis contextuales el response_meta usa los emojis de emoción."""
+        response = make_mock_response(
+            emotion="happy", emojis=[], response_text="Sin emojis."
+        )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next(m for m in sent if m["type"] == "response_meta")
         assert "1F600" in meta["expression"]["emojis"]
 
     async def test_no_actions_gives_empty_list(self):
-        """Sin [actions:...] response_meta.actions es lista vacía."""
-        ws = await self._run("[emotion:neutral] Sin acciones.")
+        """Sin actions response_meta.actions es lista vacía."""
+        response = make_mock_response(
+            emotion="neutral", actions=[], response_text="Sin acciones."
+        )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next(m for m in sent if m["type"] == "response_meta")
         assert meta["actions"] == []
 
-    async def test_emojis_and_actions_split_across_chunks(self):
-        """Tags partidos en múltiples chunks → se extraen correctamente."""
-        ws = await self._run(
-            "[emotion:happy]",
-            "[emojis:1F1FA-1F1F8",
-            ",2708]",
-            "[actions:wave:500]",
-            " Texto final.",
-        )
-        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        meta = next(m for m in sent if m["type"] == "response_meta")
-        assert "1F1FA-1F1F8" in meta["expression"]["emojis"]
-        assert len(meta["actions"]) == 1
-        chunks_text = "".join(m["text"] for m in sent if m["type"] == "text_chunk")
-        assert "[emojis:" not in chunks_text
-        assert "[actions:" not in chunks_text
-        assert "Texto final." in chunks_text
-
     async def test_emotion_combined_with_contextual_emojis(self):
         """Los emojis finales combinan los contextuales + emojis de emoción."""
-        ws = await self._run("[emotion:excited][emojis:2708,1F30D] ¡Vamos a volar!")
+        response = make_mock_response(
+            emotion="excited",
+            emojis=["2708", "1F30D"],
+            response_text="¡Vamos a volar!",
+        )
+        ws = await self._run(response)
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         meta = next(m for m in sent if m["type"] == "response_meta")
         emojis = meta["expression"]["emojis"]
@@ -823,10 +840,12 @@ class TestWsInteract:
 
         with (
             patch(
-                "ws_handlers.streaming.run_agent_stream",
-                make_async_gen("[emotion:greeting] ¡Hola!"),
+                "ws_handlers.streaming.run_agent",
+                new_callable=AsyncMock,
+                return_value=make_mock_response(
+                    emotion="greeting", response_text="¡Hola!"
+                ),
             ),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
             patch("ws_handlers.streaming._save_history_bg", new_callable=AsyncMock),
             patch(
                 "ws_handlers.streaming._load_moji_context",
@@ -894,11 +913,8 @@ class TestWsInteract:
             ],
         )
 
-        with (
-            patch("ws_handlers.streaming.run_agent_stream", make_async_gen()),
-            patch("ws_handlers.streaming.create_agent", return_value=None),
-        ):
-            await ws_interact(ws)
+        # No agente invocado — solo frames binarios sin audio_end
+        await ws_interact(ws)
 
         all_sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
         types = [m["type"] for m in all_sent]

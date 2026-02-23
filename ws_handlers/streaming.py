@@ -1,15 +1,14 @@
 """
 ws_handlers/streaming.py — Handler WebSocket principal para /ws/interact.
 
-v2.0 — Moji Amigo Familiar
+v3.0 — Moji Amigo Familiar
 
 Implementa el flujo completo:
   1. Acepta la conexión y autentica vía API Key.
   2. Bucle de mensajes: gestiona todos los tipos de mensaje del protocolo v2.0.
-  3. Parsea tags del LLM: [emotion:], [emojis:], [actions:], [memory:],
-     [person_name:], [media_summary:].
-  5. Envía emotion + text_chunks progresivamente + response_meta + stream_end.
-  6. Background: historial + compactación de memorias.
+  3. Invoca el agente con structured output (MojiResponse).
+  4. Envía emotion + text_chunk + response_meta + stream_end.
+  5. Background: historial + compactación de memorias + persistencia de persona/memoria.
 
 Uso (registrado en main.py):
     from ws_handlers.streaming import ws_interact
@@ -23,7 +22,6 @@ import asyncio
 import base64
 import json
 import logging
-import re
 import time
 
 import db as db_module
@@ -32,10 +30,10 @@ from starlette.websockets import WebSocketState
 
 from repositories.memory import MemoryRepository
 from repositories.people import PeopleRepository
-from services.agent import create_agent, run_agent_stream
-from services.expression import emotion_to_emojis, parse_emotion_tag, parse_emojis_tag
+from services.agent import run_agent
+from services.expression import emotion_to_emojis
 from services.memory_compaction import compact_memories_async
-from services.movement import build_move_sequence, parse_actions_tag
+from services.movement import action_steps_from_list, build_move_sequence
 from services.history import ConversationHistory
 from services.intent import classify_intent
 from ws_handlers.auth import authenticate_websocket
@@ -51,29 +49,6 @@ from ws_handlers.protocol import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Tamaño máximo del buffer de cabecera para capturar todos los tags de control:
-# [emotion:TAG][emojis:CODE,...][actions:step|...]
-_MAX_HEADER_BUFFER = 500
-
-# Tags al final de la respuesta del LLM (se extraen y se eliminan del texto visible)
-_MEDIA_SUMMARY_RE = re.compile(
-    r"\[media_summary:\s*.*?\]",
-    re.DOTALL | re.IGNORECASE,
-)
-_MEDIA_SUMMARY_OPEN = "[media_summary:"
-
-# [memory:TIPO:contenido]  — LLM decide guardar un recuerdo
-_MEMORY_TAG_RE = re.compile(
-    r"\[memory:([a-z_]+):([^\]]+)\]",
-    re.IGNORECASE,
-)
-
-# [person_name:NOMBRE]  — LLM extrae nombre del audio de presentación
-_PERSON_NAME_TAG_RE = re.compile(
-    r"\[person_name:([^\]]+)\]",
-    re.IGNORECASE,
-)
 
 # Secuencia de giro ESP32 para face_scan_mode
 _FACE_SCAN_SEQUENCE: list[dict] = [
@@ -104,7 +79,6 @@ async def ws_interact(websocket: WebSocket) -> None:
 
     # Objetos de sesión (one per WS connection)
     history_service = ConversationHistory()
-    agent = create_agent()
 
     # Estado de la interacción actual
     person_id: str | None = None  # slug de la persona identificada
@@ -178,7 +152,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         input_type="text",
                         history_service=history_service,
                         session_id=session_id,
-                        agent=agent,
                         face_embedding_b64=face_emb,
                     )
 
@@ -202,7 +175,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         audio_data=audio_data,
                         history_service=history_service,
                         session_id=session_id,
-                        agent=agent,
                         face_embedding_b64=face_emb,
                     )
                 else:
@@ -240,7 +212,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     image_data=image_bytes,
                     history_service=history_service,
                     session_id=session_id,
-                    agent=agent,
                     face_embedding_b64=face_emb,
                 )
 
@@ -266,7 +237,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     video_data=video_bytes,
                     history_service=history_service,
                     session_id=session_id,
-                    agent=agent,
                 )
 
             elif client_type == "multimodal":
@@ -313,7 +283,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     video_mime_type=mm_video_mime,
                     history_service=history_service,
                     session_id=session_id,
-                    agent=agent,
                     face_embedding_b64=face_emb_mm,
                 )
 
@@ -357,7 +326,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         input_type="text",
                         history_service=history_service,
                         session_id=session_id,
-                        agent=agent,
                         memory_context=context,
                     )
 
@@ -390,7 +358,6 @@ async def _process_interaction(
     input_type: str,  # "text" | "audio" | "vision"
     history_service: ConversationHistory,
     session_id: str,
-    agent,
     audio_data: bytes | None = None,
     audio_mime_type: str = "audio/webm",
     image_data: bytes | None = None,
@@ -402,8 +369,8 @@ async def _process_interaction(
 ) -> None:
     """
     Procesa una interacción completa:
-      load context → run agent stream → emit emotion + text_chunks
-      → extract tags (memory/person_name) → emit meta
+      load context → run_agent (structured output) → emit emotion + text_chunk
+      → persist memories/person → emit meta + stream_end → background tasks
     """
     start_time = time.monotonic()
 
@@ -414,40 +381,20 @@ async def _process_interaction(
     # 2. Obtener historial de la sesión
     history = history_service.get_history(session_id)
 
-    # 3. Preparar el input para el agente
-    #    • Para texto: enriquecer con contexto de memoria en el mismo string.
-    #    • Para media (audio/imagen/video): pasar el contexto de memoria separado
-    #      como texto y el media como bytes — Gemini lo recibe todo junto.
+    logger.info(f"History for session {session_id}: {history}")
+
     has_media = (
         audio_data is not None or image_data is not None or video_data is not None
     )
     has_face_embedding = face_embedding_b64 is not None
 
-    if has_media:
-        enriched_input: str | None = None
-        if user_input:
-            enriched_input = user_input  # texto adicional junto al media
-    else:
-        enriched_input = user_input or ""
-
-    # 4. Streaming del agente
-    full_response = ""
-    emotion_tag = "neutral"
-    emotion_sent = False
-    prefix_buf = ""
-    contextual_emojis: list[str] = []
-    response_actions: list[dict] = []
-    media_summary: str = ""
-    pending_buf: str = ""
-    extracted_person_name: str | None = None  # de [person_name:NOMBRE]
-
+    # 3. Invocar el agente con structured output
     try:
-        async for chunk in run_agent_stream(
-            user_input=enriched_input,
+        response = await run_agent(
+            user_input=user_input,
             history=history,
             session_id=session_id,
             person_id=person_id,
-            agent=agent,
             audio_data=audio_data,
             audio_mime_type=audio_mime_type,
             image_data=image_data,
@@ -456,118 +403,7 @@ async def _process_interaction(
             video_mime_type=video_mime_type,
             memory_context=memory_context,
             has_face_embedding=has_face_embedding,
-        ):
-            if not chunk:
-                continue
-
-            if not emotion_sent:
-                # FASE 1: acumular la cabecera completa de tags de control.
-                # El LLM emite: [emotion:TAG][emojis:CODE,...][actions:step|...] texto
-                # En media: añade [media_summary: ...] antes del texto de respuesta.
-                prefix_buf += chunk
-                buffer_full = len(prefix_buf) >= _MAX_HEADER_BUFFER
-
-                # Esperar hasta tener al menos un ] en el buffer
-                if "]" not in prefix_buf and not buffer_full:
-                    continue
-
-                # ── Parsear emotion tag ───────────────────────────────────────
-                emotion_tag, remaining = parse_emotion_tag(prefix_buf)
-
-                # remaining vacío: puede haber más tags en el próximo chunk
-                if not remaining and not buffer_full:
-                    continue
-                # remaining empieza con [ pero sin ] todavía: tag incompleto
-                if (
-                    remaining.startswith("[")
-                    and "]" not in remaining
-                    and not buffer_full
-                ):
-                    continue
-
-                # ── Extraer [emojis:CODE,...] si está al inicio ───────────────
-                e_emojis, remaining = parse_emojis_tag(remaining)
-                if e_emojis:
-                    contextual_emojis = e_emojis
-
-                if not remaining and not buffer_full:
-                    continue
-                if (
-                    remaining.startswith("[")
-                    and "]" not in remaining
-                    and not buffer_full
-                ):
-                    continue
-
-                # ── Extraer [actions:step|...] si está al inicio ──────────────
-                e_actions, remaining = parse_actions_tag(remaining)
-                if e_actions:
-                    response_actions = e_actions
-
-                if not remaining and not buffer_full:
-                    continue
-                if (
-                    remaining.startswith("[")
-                    and "]" not in remaining
-                    and not buffer_full
-                ):
-                    continue
-
-                # ── Cabecera lista — enviar emotion (§3.4 step 1) ────────────
-                await _send_safe(
-                    websocket,
-                    make_emotion(
-                        request_id=request_id,
-                        emotion=emotion_tag,
-                        person_identified=person_id,
-                    ),
-                )
-                emotion_sent = True
-
-                # El texto restante del prefijo se enruta al pending_buf para ser
-                # procesado igual que el resto del stream en FASE 3.
-                if remaining:
-                    pending_buf += remaining
-
-            else:
-                # FASE 3: streaming con detección de [media_summary:...] al final.
-                # pending_buf permite manejar el tag aunque llegue fragmentado en chunks.
-                pending_buf += chunk
-                lower_buf = pending_buf.lower()
-                tag_pos = lower_buf.find(_MEDIA_SUMMARY_OPEN)
-                if tag_pos >= 0:
-                    # Encontrado el inicio del tag — flush todo lo anterior al cliente
-                    before = pending_buf[:tag_pos]
-                    if before:
-                        await _send_safe(websocket, make_text_chunk(request_id, before))
-                        full_response += before
-                    pending_buf = pending_buf[tag_pos:]
-                    # ¿Tenemos ya el cierre ]?
-                    close_pos = pending_buf.find("]", len(_MEDIA_SUMMARY_OPEN))
-                    if close_pos >= 0:
-                        media_summary = pending_buf[
-                            len(_MEDIA_SUMMARY_OPEN) : close_pos
-                        ].strip()
-                        after_tag = pending_buf[close_pos + 1 :].lstrip()
-                        pending_buf = ""
-                        if after_tag:
-                            await _send_safe(
-                                websocket, make_text_chunk(request_id, after_tag)
-                            )
-                            full_response += after_tag
-                    # else: tag aún incompleto, seguir acumulando en pending_buf
-                else:
-                    # Sin inicio de tag — flush todo excepto margen de seguridad
-                    margin = len(_MEDIA_SUMMARY_OPEN)
-                    safe_len = max(0, len(pending_buf) - margin)
-                    if safe_len > 0:
-                        to_send = pending_buf[:safe_len]
-                        await _send_safe(
-                            websocket, make_text_chunk(request_id, to_send)
-                        )
-                        full_response += to_send
-                        pending_buf = pending_buf[safe_len:]
-
+        )
     except Exception as exc:
         logger.error(
             "ws: error en agente session_id=%s request_id=%s: %s",
@@ -587,138 +423,106 @@ async def _process_interaction(
         )
         return
 
-    # Si el stream terminó sin emitir la emoción (respuesta vacía), emitir neutral
-    if not emotion_sent:
-        if prefix_buf:
-            emotion_tag, remaining = parse_emotion_tag(prefix_buf)
-            full_response += remaining
-        await _send_safe(
-            websocket,
-            make_emotion(
-                request_id=request_id,
-                emotion=emotion_tag,
-                person_identified=person_id,
-            ),
-        )
-        if full_response:
-            await _send_safe(websocket, make_text_chunk(request_id, full_response))
+    # 4. Enviar emoción
+    await _send_safe(
+        websocket,
+        make_emotion(
+            request_id=request_id,
+            emotion=response.emotion,
+            person_identified=person_id,
+        ),
+    )
 
-    # Flush del pending_buf al finalizar el stream
-    if pending_buf:
-        match = re.search(
-            r"\[media_summary:\s*(.*?)\]", pending_buf, re.DOTALL | re.IGNORECASE
-        )
-        if match:
-            if not media_summary:
-                media_summary = match.group(1).strip()
-            before_tag = pending_buf[: match.start()].rstrip()
-            after_tag = pending_buf[match.end() :].lstrip()
-            clean = (
-                before_tag + (" " if before_tag and after_tag else "") + after_tag
-            ).strip()
-        else:
-            clean = pending_buf.strip()
-        if clean:
-            await _send_safe(websocket, make_text_chunk(request_id, clean))
-            full_response += clean
-        pending_buf = ""
+    # 5. Enviar el texto de respuesta como un único chunk
+    if response.response_text:
+        await _send_safe(websocket, make_text_chunk(request_id, response.response_text))
 
-    # ── Extraer tags finales del LLM del full_response ────────────────────────
-    # [person_name:NOMBRE]
-    pn_match = _PERSON_NAME_TAG_RE.search(full_response)
-    if pn_match:
-        extracted_person_name = pn_match.group(1).strip()
-        full_response = _PERSON_NAME_TAG_RE.sub("", full_response).strip()
-        if has_face_embedding and face_embedding_b64 and extracted_person_name:
-            asyncio.create_task(
-                _save_person_name_bg(
-                    name=extracted_person_name,
-                    person_id=person_id,
-                    face_embedding_b64=face_embedding_b64,
-                ),
-                name=f"person-{request_id}",
-            )
-
-    # [memory:TIPO:contenido]
-    for mem_match in _MEMORY_TAG_RE.finditer(full_response):
-        mem_type = mem_match.group(1).strip()
-        mem_content = mem_match.group(2).strip()
+    # 6. Persistir memories en background
+    for mem in response.memories:
         asyncio.create_task(
             _save_memory_bg(
-                memory_type=mem_type,
-                content=mem_content,
+                memory_type=mem.memory_type,
+                content=mem.content,
                 person_id=person_id,
             ),
             name=f"memory-{request_id}",
         )
-    full_response = _MEMORY_TAG_RE.sub("", full_response).strip()
 
-    intent = classify_intent(full_response)
+    # 7. Persistir person_name en background (solo si hay face embedding)
+    if has_face_embedding and face_embedding_b64 and response.person_name:
+        asyncio.create_task(
+            _save_person_name_bg(
+                name=response.person_name,
+                person_id=person_id,
+                face_embedding_b64=face_embedding_b64,
+            ),
+            name=f"person-{request_id}",
+        )
+
+    # 8. Detectar intent de captura
+    intent = classify_intent(response.response_text)
     if intent == "photo_request":
         await _send_safe(websocket, make_capture_request(request_id, "photo"))
     elif intent == "video_request":
         await _send_safe(websocket, make_capture_request(request_id, "video"))
 
-    # 6. Construir y enviar response_meta
-    # Emojis: primero los contextuales del tema (sugeridos por el LLM),
-    # luego hasta 2 de emoción por defecto como respaldo visual.
-    emotion_emojis = emotion_to_emojis(emotion_tag)
+    # 9. Construir y enviar response_meta
+    # Emojis: primero los contextuales del LLM, luego respaldo de emoción
+    emotion_emojis = emotion_to_emojis(response.emotion)
     emojis = (
-        (contextual_emojis + emotion_emojis[:2])
-        if contextual_emojis
-        else emotion_emojis
+        (response.emojis + emotion_emojis[:2]) if response.emojis else emotion_emojis
     )
-    # Acciones: envolver los pasos en build_move_sequence si el LLM los sugirió
+    # Acciones: convertir lista de strings a secuencia ESP32
     actions: list[dict] = []
-    if response_actions:
-        actions = [
-            build_move_sequence("Movimiento sugerido por Moji", response_actions)
-        ]
+    if response.actions:
+        steps = action_steps_from_list(response.actions)
+        if steps:
+            actions = [build_move_sequence("Movimiento sugerido por Moji", steps)]
+
     processing_ms = int((time.monotonic() - start_time) * 1000)
 
     await _send_safe(
         websocket,
         make_response_meta(
             request_id=request_id,
-            response_text=full_response,
+            response_text=response.response_text,
             emojis=emojis,
             actions=actions,
-            person_name=extracted_person_name,
+            person_name=response.person_name,
         ),
     )
 
-    # 7. Enviar stream_end
+    # 10. Enviar stream_end
     await _send_safe(
         websocket,
         make_stream_end(request_id=request_id, processing_time_ms=processing_ms),
     )
 
-    # 8. Background: guardar mensajes en historial + compactar
-    #    Para media: usamos el resumen extraído del LLM como turno del usuario
-    #    (si el LLM no emitió [media_summary:...] caemos al placeholder genérico).
+    # 11. Background: guardar historial
     if not has_media:
         history_user_msg = user_input or ""
-    elif media_summary:
-        history_user_msg = media_summary
+    elif response.media_summary:
+        history_user_msg = response.media_summary
     else:
         logger.warning(
-            "ws: LLM no emitió [media_summary:] para interacción media "
+            "ws: LLM no rellenó media_summary para interacción media "
             "session_id=%s request_id=%s — usando placeholder",
             session_id,
             request_id,
         )
         history_user_msg = "[audio]" if audio_data is not None else "[imagen/video]"
+
     asyncio.create_task(
         _save_history_bg(
             history_service=history_service,
             session_id=session_id,
             user_message=history_user_msg,
-            assistant_message=full_response,
+            assistant_message=response.response_text,
             person_id=person_id,
         )
     )
 
-    # 9. Background: compactación de memorias
+    # 12. Background: compactación de memorias
     asyncio.create_task(
         compact_memories_async(person_id=person_id),
         name=f"compact-{session_id}",
