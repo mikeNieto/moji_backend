@@ -8,7 +8,7 @@ Los modelos Pydantic de referencia están en models/ws_messages.py.
 
 Uso:
     from ws_handlers.protocol import make_auth_ok, make_emotion, make_text_chunk
-    await websocket.send_text(make_auth_ok(session_id="abc"))
+    await websocket.send_text(make_auth_ok())
 """
 
 import json
@@ -22,20 +22,20 @@ def _to_json(data: dict) -> str:
     return json.dumps(data, ensure_ascii=False)
 
 
-def new_session_id() -> str:
-    """Genera un UUID v4 como session_id."""
+def new_request_id() -> str:
+    """Genera un UUID v4 para identificar una petición."""
     return str(uuid.uuid4())
 
 
 # ── Mensajes del servidor ─────────────────────────────────────────────────────
 
 
-def make_auth_ok(session_id: str) -> str:
+def make_auth_ok() -> str:
     """
     Confirmación de autenticación exitosa.
-    {"type": "auth_ok", "session_id": "..."}
+    {"type": "auth_ok"}
     """
-    return _to_json({"type": "auth_ok", "session_id": session_id})
+    return _to_json({"type": "auth_ok"})
 
 
 def make_emotion(

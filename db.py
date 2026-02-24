@@ -156,16 +156,13 @@ class ConversationHistoryRow(Base):
     __tablename__ = "conversation_history"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(10), nullable=False)  # user | assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    message_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    message_index: Mapped[int] = mapped_column(nullable=False, default=0, index=True)
     is_compacted: Mapped[bool] = mapped_column(nullable=False, default=False)
     timestamp: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now()
     )
-
-    __table_args__ = (Index("ix_conv_session_idx", "session_id", "message_index"),)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

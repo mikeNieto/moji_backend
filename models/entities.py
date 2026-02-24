@@ -65,7 +65,6 @@ class Memory:
 
 @dataclass
 class ConversationMessage:
-    session_id: str
     role: str  # "user" | "assistant"
     content: str
     message_index: int = 0

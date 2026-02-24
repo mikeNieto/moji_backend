@@ -45,7 +45,7 @@ from ws_handlers.protocol import (
     make_response_meta,
     make_stream_end,
     make_text_chunk,
-    new_session_id,
+    new_request_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,17 +68,17 @@ async def ws_interact(websocket: WebSocket) -> None:
     Handler principal para el endpoint WebSocket /ws/interact.
 
     Acepta la conexión, autentica, y entra en el bucle de mensajes.
-    Gestiona múltiples interacciones por sesión hasta que el cliente desconecta.
+    Gestiona múltiples interacciones por conexión hasta que el cliente desconecta.
     """
     await websocket.accept()
 
-    # Autenticar — retorna session_id o None (ya closed)
-    session_id = await authenticate_websocket(websocket)
-    if session_id is None:
+    # Autenticar — cierra la conexión si falla, retorna None
+    if not await authenticate_websocket(websocket):
         return
 
-    # Objetos de sesión (one per WS connection)
+    # Historial global persistente (cargado desde BD al iniciar)
     history_service = ConversationHistory()
+    await history_service.load_from_db()
 
     # Estado de la interacción actual
     person_id: str | None = None  # slug de la persona identificada
@@ -86,7 +86,10 @@ async def ws_interact(websocket: WebSocket) -> None:
     audio_buffer: bytes = b""
     pending_face_embedding: str | None = None  # base64 embedding pendiente de asociar
 
-    logger.info("ws: sesión iniciada session_id=%s", session_id)
+    logger.info(
+        "ws: conexión autenticada, historial con %d mensajes",
+        len(history_service._cache),
+    )
 
     try:
         while True:
@@ -97,7 +100,7 @@ async def ws_interact(websocket: WebSocket) -> None:
 
             # Desconexión limpia del cliente
             if msg_type == "websocket.disconnect":
-                logger.info("ws: cliente desconectado session_id=%s", session_id)
+                logger.info("ws: cliente desconectado")
                 break
 
             # ── Mensajes binarios (audio frames) ─────────────────────────────
@@ -124,7 +127,7 @@ async def ws_interact(websocket: WebSocket) -> None:
 
             if client_type == "interaction_start":
                 person_id = msg.get("person_id") or None
-                request_id = msg.get("request_id") or new_session_id()
+                request_id = msg.get("request_id") or new_request_id()
                 audio_buffer = b""  # limpiar buffer de interacción anterior
                 pending_face_embedding = msg.get("face_embedding") or None
                 logger.debug(
@@ -137,7 +140,7 @@ async def ws_interact(websocket: WebSocket) -> None:
             elif client_type == "text":
                 user_input = msg.get("content", "")
                 if not request_id:
-                    request_id = msg.get("request_id") or new_session_id()
+                    request_id = msg.get("request_id") or new_request_id()
                 else:
                     request_id = msg.get("request_id") or request_id
                 face_emb = msg.get("face_embedding") or pending_face_embedding
@@ -151,13 +154,12 @@ async def ws_interact(websocket: WebSocket) -> None:
                         user_input=user_input,
                         input_type="text",
                         history_service=history_service,
-                        session_id=session_id,
                         face_embedding_b64=face_emb,
                     )
 
             elif client_type == "audio_end":
                 if not request_id:
-                    request_id = msg.get("request_id") or new_session_id()
+                    request_id = msg.get("request_id") or new_request_id()
                 else:
                     request_id = msg.get("request_id") or request_id
                 face_emb = msg.get("face_embedding") or pending_face_embedding
@@ -174,7 +176,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                         input_type="audio",
                         audio_data=audio_data,
                         history_service=history_service,
-                        session_id=session_id,
                         face_embedding_b64=face_emb,
                     )
                 else:
@@ -190,7 +191,7 @@ async def ws_interact(websocket: WebSocket) -> None:
 
             elif client_type == "image":
                 if not request_id:
-                    request_id = msg.get("request_id") or new_session_id()
+                    request_id = msg.get("request_id") or new_request_id()
                 else:
                     request_id = msg.get("request_id") or request_id
                 raw_b64 = msg.get("data", "")
@@ -211,13 +212,12 @@ async def ws_interact(websocket: WebSocket) -> None:
                     input_type="vision",
                     image_data=image_bytes,
                     history_service=history_service,
-                    session_id=session_id,
                     face_embedding_b64=face_emb,
                 )
 
             elif client_type == "video":
                 if not request_id:
-                    request_id = msg.get("request_id") or new_session_id()
+                    request_id = msg.get("request_id") or new_request_id()
                 else:
                     request_id = msg.get("request_id") or request_id
                 raw_b64 = msg.get("data", "")
@@ -236,12 +236,11 @@ async def ws_interact(websocket: WebSocket) -> None:
                     input_type="vision",
                     video_data=video_bytes,
                     history_service=history_service,
-                    session_id=session_id,
                 )
 
             elif client_type == "multimodal":
                 if not request_id:
-                    request_id = msg.get("request_id") or new_session_id()
+                    request_id = msg.get("request_id") or new_request_id()
                 else:
                     request_id = msg.get("request_id") or request_id
 
@@ -282,7 +281,6 @@ async def ws_interact(websocket: WebSocket) -> None:
                     image_mime_type=mm_image_mime,
                     video_mime_type=mm_video_mime,
                     history_service=history_service,
-                    session_id=session_id,
                     face_embedding_b64=face_emb_mm,
                 )
 
@@ -290,7 +288,7 @@ async def ws_interact(websocket: WebSocket) -> None:
 
             elif client_type == "face_scan_mode":
                 # Android inicia escaneo facial activo — Moji gira con secuencia predefinida.
-                req_id = msg.get("request_id") or new_session_id()
+                req_id = msg.get("request_id") or new_request_id()
                 scan_seq = [build_move_sequence("Escaneo facial", _FACE_SCAN_SEQUENCE)]
                 await _send_safe(
                     websocket,
@@ -299,17 +297,16 @@ async def ws_interact(websocket: WebSocket) -> None:
 
             elif client_type == "person_detected":
                 # Android informa de una persona detectada.
-                req_id = msg.get("request_id") or new_session_id()
+                req_id = msg.get("request_id") or new_request_id()
                 known = msg.get("known", False)
                 detected_pid = msg.get("person_id") or None
                 confidence = msg.get("confidence", 0.0)
                 if known and detected_pid:
                     person_id = detected_pid
                     logger.info(
-                        "ws: persona conocida detectada person_id=%s conf=%.2f session=%s",
+                        "ws: persona conocida detectada person_id=%s conf=%.2f",
                         person_id,
                         confidence,
-                        session_id,
                     )
                 else:
                     # Cara desconocida: Moji debe preguntar el nombre
@@ -325,14 +322,11 @@ async def ws_interact(websocket: WebSocket) -> None:
                         user_input=ask_input,
                         input_type="text",
                         history_service=history_service,
-                        session_id=session_id,
                         memory_context=context,
                     )
 
     except Exception as exc:
-        logger.error(
-            "ws: error inesperado en sesión %s: %s", session_id, exc, exc_info=True
-        )
+        logger.error("ws: error inesperado: %s", exc, exc_info=True)
         if websocket.client_state == WebSocketState.CONNECTED:
             await _send_safe(
                 websocket,
@@ -343,7 +337,7 @@ async def ws_interact(websocket: WebSocket) -> None:
                 ),
             )
     finally:
-        logger.info("ws: sesión cerrada session_id=%s", session_id)
+        logger.info("ws: conexión cerrada")
 
 
 # ── Procesamiento de una interacción ─────────────────────────────────────────
@@ -357,7 +351,6 @@ async def _process_interaction(
     user_input: str | None,
     input_type: str,  # "text" | "audio" | "vision"
     history_service: ConversationHistory,
-    session_id: str,
     audio_data: bytes | None = None,
     audio_mime_type: str = "audio/webm",
     image_data: bytes | None = None,
@@ -378,10 +371,10 @@ async def _process_interaction(
     if memory_context is None:
         memory_context = await _load_moji_context(person_id)
 
-    # 2. Obtener historial de la sesión
-    history = history_service.get_history(session_id)
+    # 2. Obtener historial global
+    history = history_service.get_history()
 
-    logger.info(f"History for session {session_id}: {history}")
+    logger.info("History (%d mensajes): %s", len(history), history)
 
     has_media = (
         audio_data is not None or image_data is not None or video_data is not None
@@ -393,7 +386,6 @@ async def _process_interaction(
         response = await run_agent(
             user_input=user_input,
             history=history,
-            session_id=session_id,
             person_id=person_id,
             audio_data=audio_data,
             audio_mime_type=audio_mime_type,
@@ -406,8 +398,7 @@ async def _process_interaction(
         )
     except Exception as exc:
         logger.error(
-            "ws: error en agente session_id=%s request_id=%s: %s",
-            session_id,
+            "ws: error en agente request_id=%s: %s",
             request_id,
             exc,
             exc_info=True,
@@ -506,8 +497,7 @@ async def _process_interaction(
     else:
         logger.warning(
             "ws: LLM no rellenó media_summary para interacción media "
-            "session_id=%s request_id=%s — usando placeholder",
-            session_id,
+            "request_id=%s — usando placeholder",
             request_id,
         )
         history_user_msg = "[audio]" if audio_data is not None else "[imagen/video]"
@@ -515,7 +505,6 @@ async def _process_interaction(
     asyncio.create_task(
         _save_history_bg(
             history_service=history_service,
-            session_id=session_id,
             user_message=history_user_msg,
             assistant_message=response.response_text,
             person_id=person_id,
@@ -525,7 +514,7 @@ async def _process_interaction(
     # 12. Background: compactación de memorias
     asyncio.create_task(
         compact_memories_async(person_id=person_id),
-        name=f"compact-{session_id}",
+        name=f"compact-memories-{request_id}",
     )
 
 
@@ -534,22 +523,17 @@ async def _process_interaction(
 
 async def _save_history_bg(
     history_service: ConversationHistory,
-    session_id: str,
     user_message: str,
     assistant_message: str,
     person_id: str | None = None,
 ) -> None:
     """Guarda los mensajes de la interacción en el historial y compacta si es necesario."""
     try:
-        await history_service.add_message(
-            session_id, "user", user_message, person_id=person_id
-        )
-        await history_service.add_message(session_id, "assistant", assistant_message)
-        await history_service.compact_if_needed(session_id)
+        await history_service.add_message("user", user_message, person_id=person_id)
+        await history_service.add_message("assistant", assistant_message)
+        await history_service.compact_if_needed()
     except Exception as exc:
-        logger.warning(
-            "ws: error guardando historial session_id=%s: %s", session_id, exc
-        )
+        logger.warning("ws: error guardando historial: %s", exc)
 
 
 async def _save_memory_bg(

@@ -15,7 +15,6 @@ Uso:
     from services.agent import run_agent, MojiResponse
 
     response: MojiResponse = await run_agent(
-        session_id="sess_abc",
         person_id="persona_juan_01",
         user_input="Hola Moji, ¿cómo estás?",
         history=[{"role": "user", "content": "..."}, ...],
@@ -241,7 +240,6 @@ def _build_context_block(
 async def run_agent(
     user_input: str | None,
     history: list[dict],
-    session_id: str = "",
     person_id: str | None = None,
     audio_data: bytes | None = None,
     audio_mime_type: str = "audio/aac",
@@ -258,7 +256,6 @@ async def run_agent(
     Parámetros:
         user_input:         Texto del usuario. None cuando el input es solo media.
         history:            Historial de la sesión como lista de {role, content}.
-        session_id:         Identificador de sesión (para logging).
         person_id:          Slug de la persona identificada por Moji, o None.
         audio_data:         Bytes del audio en crudo (AAC/Opus).
         audio_mime_type:    MIME del audio (default: audio/aac).
@@ -376,8 +373,7 @@ async def run_agent(
         return result
 
     logger.info(
-        "[AGENT INPUT] session=%s person=%s has_media=%s has_embedding=%s\n%s",
-        session_id,
+        "[AGENT INPUT] person=%s has_media=%s has_embedding=%s\n%s",
         person_id,
         has_media,
         has_face_embedding,
@@ -393,8 +389,7 @@ async def run_agent(
     result: MojiResponse = await structured_model.ainvoke(messages)  # type: ignore[assignment]
 
     logger.info(
-        "[AGENT OUTPUT] session=%s person=%s\n%s",
-        session_id,
+        "[AGENT OUTPUT] person=%s\n%s",
         person_id,
         __import__("json").dumps(result.model_dump(), ensure_ascii=False, indent=2),
     )

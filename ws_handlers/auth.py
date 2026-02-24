@@ -5,16 +5,16 @@ El primer mensaje que envía el cliente debe ser el handshake de autenticación:
     {"type": "auth", "api_key": "<secret>", "device_id": "android-uuid"}
 
 Si la API Key es válida, el servidor responde con:
-    {"type": "auth_ok", "session_id": "<uuid>"}
-y devuelve el session_id para el resto de la sesión.
+    {"type": "auth_ok"}
+y devuelve True para indicar que la conexión está autenticada.
 
 Si no, cierra la conexión con código 1008 (Policy Violation) y devuelve None.
 
 Uso:
     from ws_handlers.auth import authenticate_websocket
 
-    session_id = await authenticate_websocket(websocket)
-    if session_id is None:
+    authenticated = await authenticate_websocket(websocket)
+    if not authenticated:
         return  # conexión cerrada por auth fallida
 """
 
@@ -27,7 +27,7 @@ from fastapi import WebSocket
 from starlette.websockets import WebSocketState
 
 from config import settings
-from ws_handlers.protocol import make_auth_ok, make_error, new_session_id
+from ws_handlers.protocol import make_auth_ok, make_error
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ _AUTH_TIMEOUT = 10.0
 async def authenticate_websocket(
     websocket: WebSocket,
     timeout: float = _AUTH_TIMEOUT,
-) -> str | None:
+) -> bool | None:
     """
     Autentica una conexión WebSocket recién aceptada.
 
@@ -50,7 +50,7 @@ async def authenticate_websocket(
         timeout:   Segundos máximos para esperar el mensaje de auth.
 
     Returns:
-        El session_id (str UUID) si la autenticación fue exitosa.
+        True si la autenticación fue exitosa.
         None si falló (la conexión ya está cerrada al retornar None).
     """
     try:
@@ -103,16 +103,15 @@ async def authenticate_websocket(
         )
         return None
 
-    # Auth OK — generar session_id y enviarlo
-    session_id = new_session_id()
+    # Auth OK
     try:
-        await websocket.send_text(make_auth_ok(session_id))
+        await websocket.send_text(make_auth_ok())
     except Exception as exc:
         logger.error("ws_auth: error enviando auth_ok: %s", exc)
         return None
 
-    logger.info("ws_auth: sesión autenticada session_id=%s", session_id)
-    return session_id
+    logger.info("ws_auth: conexión autenticada")
+    return True
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

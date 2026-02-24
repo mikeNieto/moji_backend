@@ -104,7 +104,7 @@ class TestEntities:
         assert m.person_id == "persona_ana_001"
 
     def test_conversation_message_defaults(self):
-        msg = ConversationMessage(session_id="sess-1", role="user", content="Hola")
+        msg = ConversationMessage(role="user", content="Hola")
         assert msg.is_compacted is False
         assert msg.message_index == 0
 
@@ -245,7 +245,7 @@ class TestWsClientMessages:
 
 class TestWsServerMessages:
     def test_auth_ok(self):
-        msg = AuthOkMessage(session_id="sess-abc")
+        msg = AuthOkMessage()
         data = json.loads(msg.model_dump_json())
         assert data["type"] == "auth_ok"
 
@@ -387,7 +387,6 @@ async def test_face_embedding_row(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_conversation_history_compacted(db_session: AsyncSession):
     row = ConversationHistoryRow(
-        session_id="sess-compact",
         role="assistant",
         content="[Resumen compactado]",
         message_index=0,

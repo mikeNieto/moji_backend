@@ -346,48 +346,46 @@ class TestBuildMoveSequence:
 class TestConversationHistory:
     async def test_add_and_get(self):
         history = ConversationHistory()
-        await history.add_message(
-            "sess1", "user", "Hola Moji", person_id="persona_ana_001"
-        )
-        await history.add_message("sess1", "assistant", "[emotion:greeting] Hola!")
+        await history.add_message("user", "Hola Moji", person_id="persona_ana_001")
+        await history.add_message("assistant", "[emotion:greeting] Hola!")
 
-        msgs = history.get_history("sess1")
+        msgs = history.get_history()
         assert len(msgs) == 2
         assert msgs[0] == {"role": "user", "content": "Hola Moji"}
         assert msgs[1] == {"role": "assistant", "content": "[emotion:greeting] Hola!"}
 
-    async def test_empty_session_returns_empty_list(self):
+    async def test_empty_history_returns_empty_list(self):
         history = ConversationHistory()
-        msgs = history.get_history("nonexistent_session")
+        msgs = history.get_history()
         assert msgs == []
 
-    async def test_multiple_sessions_isolated(self):
+    async def test_multiple_messages_ordered(self):
         history = ConversationHistory()
-        await history.add_message("sess_a", "user", "Mensaje A")
-        await history.add_message("sess_b", "user", "Mensaje B")
+        await history.add_message("user", "Mensaje A")
+        await history.add_message("assistant", "Respuesta A")
+        await history.add_message("user", "Mensaje B")
 
-        msgs_a = history.get_history("sess_a")
-        msgs_b = history.get_history("sess_b")
-        assert len(msgs_a) == 1
-        assert len(msgs_b) == 1
-        assert msgs_a[0]["content"] == "Mensaje A"
-        assert msgs_b[0]["content"] == "Mensaje B"
+        msgs = history.get_history()
+        assert len(msgs) == 3
+        assert msgs[0]["content"] == "Mensaje A"
+        assert msgs[1]["content"] == "Respuesta A"
+        assert msgs[2]["content"] == "Mensaje B"
 
     async def test_get_history_format(self):
         history = ConversationHistory()
-        await history.add_message("sess1", "user", "Pregunta")
-        msgs = history.get_history("sess1")
+        await history.add_message("user", "Pregunta")
+        msgs = history.get_history()
         assert set(msgs[0].keys()) == {"role", "content"}
 
     async def test_compact_if_needed_below_threshold(self):
         """Sin llegar al umbral, compact_if_needed no lanza tarea."""
         history = ConversationHistory()
         for i in range(5):
-            await history.add_message("sess1", "user", f"Msg {i}")
+            await history.add_message("user", f"Msg {i}")
 
         # Parchear create_task para verificar que NO se llama
         with patch("services.history.asyncio.create_task") as mock_task:
-            await history.compact_if_needed("sess1")
+            await history.compact_if_needed()
             mock_task.assert_not_called()
 
     async def test_compact_if_needed_at_threshold(self):
@@ -397,7 +395,7 @@ class TestConversationHistory:
         from config import settings
 
         for i in range(settings.CONVERSATION_COMPACTION_THRESHOLD):
-            await history.add_message("sess1", "user", f"Msg {i}")
+            await history.add_message("user", f"Msg {i}")
 
         def _close_coro(coro, **kwargs):
             coro.close()  # cierra el coroutine para evitar RuntimeWarning
@@ -406,7 +404,7 @@ class TestConversationHistory:
         with patch(
             "services.history.asyncio.create_task", side_effect=_close_coro
         ) as mock_task:
-            await history.compact_if_needed("sess1")
+            await history.compact_if_needed()
             mock_task.assert_called_once()
 
     async def test_compact_updates_cache(self):
@@ -415,7 +413,7 @@ class TestConversationHistory:
 
         for i in range(10):
             role = "user" if i % 2 == 0 else "assistant"
-            await history.add_message("sess1", role, f"Mensaje {i}")
+            await history.add_message(role, f"Mensaje {i}")
 
         # Mockear Gemini para que devuelva un resumen
         mock_response = MagicMock()
@@ -425,9 +423,9 @@ class TestConversationHistory:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
 
         with patch("services.history.get_model", return_value=mock_model):
-            await history._compact("sess1")
+            await history._compact()
 
-        msgs = history.get_history("sess1")
+        msgs = history.get_history()
         # Debe contener el resumen + los últimos 5 mensajes (keep=5)
         assert len(msgs) == 6  # 1 resumen + 5 últimos
         assert "[RESUMEN]" in msgs[0]["content"]
@@ -435,13 +433,13 @@ class TestConversationHistory:
     async def test_load_from_db(self):
         """load_from_db recupera el historial persistido."""
         h1 = ConversationHistory()
-        await h1.add_message("sess_load", "user", "Persistido")
-        await h1.add_message("sess_load", "assistant", "Respuesta")
+        await h1.add_message("user", "Persistido")
+        await h1.add_message("assistant", "Respuesta")
 
         # Nueva instancia sin caché — carga desde BD
         h2 = ConversationHistory()
-        await h2.load_from_db("sess_load")
-        msgs = h2.get_history("sess_load")
+        await h2.load_from_db()
+        msgs = h2.get_history()
         assert len(msgs) == 2
         assert msgs[0]["content"] == "Persistido"
 

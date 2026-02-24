@@ -90,7 +90,6 @@ def generate_fake_embedding_b64() -> str:
 def _init_session() -> None:
     defaults = {
         "ws": None,
-        "session_id": None,
         "connected": False,
         "history": [],
         "last_result": None,  # dict con la última respuesta de interacción
@@ -124,9 +123,8 @@ def ws_connect_auth(url: str, api_key: str) -> tuple[bool, str]:
         msg = json.loads(ws.recv(timeout=10))
         if msg.get("type") == "auth_ok":
             st.session_state.ws = ws
-            st.session_state.session_id = msg["session_id"]
             st.session_state.connected = True
-            return True, f"Conectado · session_id: {msg['session_id']}"
+            return True, "Conectado"
         ws.close()
         return False, f"Auth rechazada: {msg}"
     except Exception as exc:
@@ -140,7 +138,6 @@ def ws_disconnect() -> None:
         except Exception:
             pass
     st.session_state.ws = None
-    st.session_state.session_id = None
     st.session_state.connected = False
 
 
@@ -389,7 +386,7 @@ with st.sidebar:
                 else:
                     st.error(msg)
     else:
-        st.success(f"✅ Conectado\n\n`{st.session_state.session_id}`")
+        st.success("✅ Conectado")
         if st.button("Desconectar", use_container_width=True):
             ws_disconnect()
             st.rerun()

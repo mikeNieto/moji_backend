@@ -29,7 +29,7 @@ from ws_handlers.protocol import (
     make_response_meta,
     make_stream_end,
     make_text_chunk,
-    new_session_id,
+    new_request_id,
 )
 from ws_handlers.streaming import (
     _load_moji_context,
@@ -87,8 +87,8 @@ def make_mock_ws(
 
 class TestProtocolBuilders:
     def test_make_auth_ok(self):
-        result = json.loads(make_auth_ok("sess-123"))
-        assert result == {"type": "auth_ok", "session_id": "sess-123"}
+        result = json.loads(make_auth_ok())
+        assert result == {"type": "auth_ok"}
 
     def test_make_emotion_minimal(self):
         result = json.loads(make_emotion("req-1", "happy"))
@@ -187,15 +187,15 @@ class TestProtocolBuilders:
         result = json.loads(make_low_battery_alert(8, "phone"))
         assert result["source"] == "phone"
 
-    def test_new_session_id_is_uuid(self):
+    def test_new_request_id_is_uuid(self):
         import uuid
 
-        sid = new_session_id()
+        sid = new_request_id()
         parsed = uuid.UUID(sid)
         assert str(parsed) == sid
 
-    def test_new_session_id_unique(self):
-        ids = {new_session_id() for _ in range(20)}
+    def test_new_request_id_unique(self):
+        ids = {new_request_id() for _ in range(20)}
         assert len(ids) == 20
 
 
@@ -206,7 +206,7 @@ class TestProtocolBuilders:
 
 class TestAuthenticateWebSocket:
     async def test_valid_api_key(self):
-        """API Key correcta → devuelve session_id y envía auth_ok."""
+        """API Key correcta → retorna True y envía auth_ok."""
         ws = make_mock_ws(
             receive_text_values=[
                 json.dumps(
@@ -214,12 +214,12 @@ class TestAuthenticateWebSocket:
                 )
             ]
         )
-        session_id = await authenticate_websocket(ws)
-        assert session_id is not None
+        result = await authenticate_websocket(ws)
+        assert result is True
         ws.send_text.assert_called_once()
         sent = json.loads(ws.send_text.call_args[0][0])
         assert sent["type"] == "auth_ok"
-        assert sent["session_id"] == session_id
+        assert "session_id" not in sent
 
     async def test_invalid_api_key(self):
         """API Key incorrecta → devuelve None y cierra con 1008."""
@@ -256,10 +256,8 @@ class TestAuthenticateWebSocket:
         assert result is None
         ws.close.assert_called_once_with(code=1008)
 
-    async def test_session_id_is_uuid(self):
-        """El session_id devuelto es un UUID válido."""
-        import uuid
-
+    async def test_auth_returns_true(self):
+        """Auth exitosa retorna True (sin session_id)."""
         ws = make_mock_ws(
             receive_text_values=[
                 json.dumps(
@@ -267,9 +265,8 @@ class TestAuthenticateWebSocket:
                 )
             ]
         )
-        session_id = await authenticate_websocket(ws)
-        assert session_id is not None
-        uuid.UUID(session_id)
+        result = await authenticate_websocket(ws)
+        assert result is True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -375,7 +372,6 @@ class TestProcessInteraction:
                 user_input="Hola",
                 input_type="text",
                 history_service=history_service,
-                session_id="sess-test",
             )
             await asyncio.sleep(0)
         return ws
@@ -487,7 +483,6 @@ class TestProcessInteraction:
                 user_input="Hola",
                 input_type="text",
                 history_service=history_service,
-                session_id="sess-err",
             )
 
         sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
@@ -566,7 +561,6 @@ class TestProcessInteractionMedia:
                 input_type="audio",
                 audio_data=b"\x00\x01\x02",
                 history_service=history_service,
-                session_id="sess-test",
             )
             await asyncio.sleep(0)
 
@@ -637,7 +631,6 @@ class TestProcessInteractionMedia:
                 user_input="¿Qué hora es?",
                 input_type="text",
                 history_service=history_service,
-                session_id="sess-test",
             )
             await asyncio.sleep(0)
 
@@ -704,7 +697,6 @@ class TestContextualEmojisAndActions:
                 user_input="Test question",
                 input_type="text",
                 history_service=history_service,
-                session_id="sess-test",
             )
             await asyncio.sleep(0)
         return ws

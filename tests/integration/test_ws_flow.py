@@ -55,15 +55,13 @@ def ws_app():
 
 class TestWebSocketFlow:
     def test_auth_valid_key(self, ws_app):
-        """Auth con API Key válida → auth_ok con session_id."""
+        """Auth con API Key válida → auth_ok sin session_id (historial global)."""
         with ws_app.websocket_connect("/ws/interact") as ws:
             ws.send_json(
                 {"type": "auth", "api_key": "test-api-key-for-unit-tests-only"}
             )
             msg = ws.receive_json()
             assert msg["type"] == "auth_ok"
-            assert isinstance(msg["session_id"], str)
-            assert len(msg["session_id"]) > 0
 
     def test_auth_invalid_key_closes_connection(self, ws_app):
         """Auth con API Key inválida → error + cierre."""

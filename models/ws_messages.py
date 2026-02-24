@@ -110,7 +110,6 @@ ClientMessage = (
 
 class AuthOkMessage(BaseModel):
     type: Literal["auth_ok"] = "auth_ok"
-    session_id: str
 
 
 class EmotionMessage(BaseModel):
