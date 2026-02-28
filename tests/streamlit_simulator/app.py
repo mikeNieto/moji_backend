@@ -361,18 +361,7 @@ with st.sidebar:
                     break
 
     st.divider()
-    st.subheader("👤 Persona")
-    person_id = st.selectbox(
-        "person_id",
-        ["unknown", "person_juan", "person_maria", "person_pedro"],
-        help="Slug de la persona reconocida. 'unknown' = Moji no reconoció a nadie.",
-    )
-    custom_person = st.text_input("... o escribe un person_id personalizado", value="")
-    if custom_person.strip():
-        person_id = custom_person.strip()
-
-    st.divider()
-    st.subheader("🔌 Conexión")
+    st.subheader(" Conexión")
     if not st.session_state.connected:
         if st.button("Conectar", type="primary", use_container_width=True):
             if not api_key:
@@ -479,124 +468,91 @@ with main_col:
         )
 
         # ── face_scan_mode ────────────────────────────────────────────────────
-        with st.expander("🔍 face_scan_mode — Escaneo facial activo"):
-            if st.button(
-                "Enviar face_scan_mode",
-                use_container_width=True,
-                disabled=not st.session_state.connected,
-            ):
-                req_id = str(uuid.uuid4())
-                with st.spinner("Esperando face_scan_actions…"):
-                    try:
-                        ev_result = ws_send_event(
-                            payload={"type": "face_scan_mode", "request_id": req_id},
-                            wait_types=["face_scan_actions"],
-                        )
-                    except Exception as exc:
-                        st.session_state.connected = False
-                        ev_result = {"received": None, "chunks": [], "error": str(exc)}
-                st.session_state.last_event_result = {
-                    "kind": "face_scan_mode",
-                    **ev_result,
-                }
-                st.rerun()
+        st.markdown("#### 🔍 Escaneo facial")
+        if st.button(
+            "Enviar face_scan_mode",
+            use_container_width=True,
+            disabled=not st.session_state.connected,
+        ):
+            req_id = str(uuid.uuid4())
+            with st.spinner("Esperando face_scan_actions…"):
+                try:
+                    ev_result = ws_send_event(
+                        payload={"type": "face_scan_mode", "request_id": req_id},
+                        wait_types=["face_scan_actions"],
+                    )
+                except Exception as exc:
+                    st.session_state.connected = False
+                    ev_result = {"received": None, "chunks": [], "error": str(exc)}
+            st.session_state.last_event_result = {"kind": "face_scan_mode", **ev_result}
+            st.rerun()
+
+        st.divider()
 
         # ── person_detected ───────────────────────────────────────────────────
-        with st.expander("👁️ person_detected — Persona detectada"):
-            pd_known = st.checkbox("¿Persona conocida?", value=False, key="pd_known")
-            pd_pid = st.text_input(
-                "person_id (solo si conocida)",
-                value="",
-                key="pd_pid",
-                disabled=not pd_known,
-            )
-            pd_conf = st.slider(
-                "Confianza",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.85,
-                step=0.05,
-                key="pd_conf",
-            )
-            if st.button(
-                "Enviar person_detected",
-                use_container_width=True,
-                disabled=not st.session_state.connected,
-            ):
-                req_id = str(uuid.uuid4())
-                with st.spinner("Enviando person_detected…"):
-                    try:
-                        ws = st.session_state.ws
-                        ws.send(
-                            json.dumps(
-                                {
-                                    "type": "person_detected",
-                                    "request_id": req_id,
-                                    "known": pd_known,
-                                    "person_id": pd_pid.strip() or None,
-                                    "confidence": pd_conf,
-                                }
-                            )
-                        )
-                        ev_result = {
-                            "received": {"type": "person_detected_sent"},
-                            "chunks": [],
-                            "error": None,
+        st.markdown("#### 👁️ Persona detectada")
+        pd_known = st.checkbox("¿Persona conocida?", value=False, key="pd_known")
+        pd_pid = st.text_input(
+            "person_id (solo si conocida)",
+            value="",
+            key="pd_pid",
+            disabled=not pd_known,
+        )
+        pd_conf = st.slider("Confianza", 0.0, 1.0, 0.85, 0.05, key="pd_conf")
+        if st.button(
+            "Enviar person_detected",
+            use_container_width=True,
+            disabled=not st.session_state.connected,
+        ):
+            req_id = str(uuid.uuid4())
+            try:
+                st.session_state.ws.send(
+                    json.dumps(
+                        {
+                            "type": "person_detected",
+                            "request_id": req_id,
+                            "known": pd_known,
+                            "person_id": pd_pid.strip() or None,
+                            "confidence": pd_conf,
                         }
-                    except Exception as exc:
-                        st.session_state.connected = False
-                        ev_result = {"received": None, "chunks": [], "error": str(exc)}
-                st.session_state.last_event_result = {
-                    "kind": "person_detected",
-                    "known": pd_known,
-                    "person_id": pd_pid.strip() or None,
-                    **ev_result,
+                    )
+                )
+                ev_result = {
+                    "received": {"type": "person_detected_sent"},
+                    "chunks": [],
+                    "error": None,
                 }
-                st.rerun()
+            except Exception as exc:
+                st.session_state.connected = False
+                ev_result = {"received": None, "chunks": [], "error": str(exc)}
+            st.session_state.last_event_result = {
+                "kind": "person_detected",
+                "known": pd_known,
+                "person_id": pd_pid.strip() or None,
+                **ev_result,
+            }
+            st.rerun()
 
-        # ── flujo_persona_nueva ───────────────────────────────────────────────
-        with st.expander("🆕 Flujo Persona Nueva — Registro completo", expanded=False):
-            st.caption(
-                "Wizard para probar el flujo completo: Moji detecta una persona "
-                "desconocida → pregunta el nombre → registra en BD → reencuentro."
+        st.divider()
+
+        # ── Flujo persona nueva (wizard 3 pasos) ──────────────────────────────
+        st.markdown("#### 🆕 Flujo persona nueva")
+        st.caption(
+            "① Moji detecta desconocido → ② usuario dice su nombre → ③ reencuentro."
+        )
+
+        pnf_step = st.session_state.get("new_person_step", 0)
+
+        # Paso 1 — detectar persona desconocida
+        step1_done = pnf_step > 0
+        with st.container(border=True):
+            st.markdown(
+                f"**① Detectar persona desconocida** {'✅' if step1_done else ''}"
             )
-
-            pnf_step = st.session_state.get("new_person_step", 0)
-
-            # Indicador de progreso
-            step_cols = st.columns(3)
-            for _i, (_sc, _sl, _sa) in enumerate(
-                zip(
-                    step_cols,
-                    ["① Detectar", "② Nombre", "③ Reencuentro"],
-                    [
-                        "Simular persona desconocida",
-                        "Decir nombre + embedding",
-                        "Volver a encontrarse",
-                    ],
-                )
-            ):
-                with _sc:
-                    if _i < pnf_step:
-                        st.success(_sl)
-                    elif _i == pnf_step:
-                        st.info(f"**{_sl}**")
-                    else:
-                        st.caption(_sl)
-
-            st.markdown("---")
-
-            # ── Paso 0: detectar persona desconocida ──────────────────────────
-            if pnf_step == 0:
-                st.markdown(
-                    "Pulsa el botón para simular que Moji detecta una cara desconocida. "
-                    "El backend lanzará el agente para saludar y pedir el nombre."
-                )
-                pnf_conf = st.slider(
-                    "Confianza de detección", 0.5, 1.0, 0.82, 0.01, key="pnf_conf"
-                )
+            if not step1_done:
+                pnf_conf = st.slider("Confianza", 0.5, 1.0, 0.82, 0.01, key="pnf_conf")
                 if st.button(
-                    "① Simular persona desconocida",
+                    "Simular persona desconocida",
                     type="primary",
                     use_container_width=True,
                     disabled=not st.session_state.connected,
@@ -634,222 +590,159 @@ with main_col:
                     if not pnf_r1.get("error"):
                         st.session_state.new_person_step = 1
                     st.rerun()
-
-            # ── Paso 1: usuario dice su nombre ────────────────────────────────
-            elif pnf_step == 1:
+            else:
                 moji_q = st.session_state.get("new_person_moji_q") or {}
-                if moji_q.get("error"):
-                    st.error(moji_q["error"])
-                elif moji_q.get("text"):
-                    with st.container(border=True):
-                        st.caption("🤖 Moji preguntó:")
-                        st.markdown(
-                            f"{emotion_img_html(moji_q.get('emotion', 'neutral'), 28)} "
-                            f"{moji_q['text']}",
-                            unsafe_allow_html=True,
-                        )
+                if moji_q.get("text"):
+                    st.markdown(
+                        f"{emotion_img_html(moji_q.get('emotion', 'neutral'), 24)} "
+                        f"_{moji_q['text']}_",
+                        unsafe_allow_html=True,
+                    )
 
-                st.markdown(
-                    "Escribe el nombre de la persona. Se enviará junto con un "
-                    "**embedding facial sintético** (128 float32 normalizados) "
-                    "para activar el registro en la BD."
-                )
+        # Paso 2 — usuario dice su nombre
+        step2_done = pnf_step > 1
+        with st.container(border=True):
+            st.markdown(
+                f"**② Decir nombre** {'✅' if step2_done else ('🔒' if pnf_step < 1 else '')}"
+            )
+            if pnf_step == 1:
                 pnf_name = st.text_input(
                     "Nombre de la persona",
                     placeholder="Ana, Carlos, María…",
                     key="pnf_name_input",
                 )
-                with st.expander("ℹ️ ¿Qué es el embedding sintético?"):
-                    st.caption(
-                        "Se genera un vector unitario de 128 flotantes aleatorios "
-                        "codificado en base64 (~684 bytes). El backend lo almacena en "
-                        "la tabla `face_embeddings` y activa la instrucción especial del "
-                        "LLM para que emita `[person_name:NOMBRE]` en su respuesta."
+                if st.button(
+                    "Enviar nombre (con embedding facial)",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not st.session_state.connected
+                    or not (pnf_name or "").strip(),
+                ):
+                    nombre = pnf_name.strip()
+                    with st.spinner(f"Enviando «Me llamo {nombre}»…"):
+                        try:
+                            pnf_r2 = ws_send_and_receive(
+                                user_text=f"Me llamo {nombre}",
+                                audio_bytes=None,
+                                video_bytes=None,
+                                person_id="unknown",
+                                face_embedding_b64=generate_fake_embedding_b64(),
+                            )
+                        except Exception as exc:
+                            st.session_state.connected = False
+                            pnf_r2 = {
+                                "error": str(exc),
+                                "emotion": "neutral",
+                                "person_identified": None,
+                                "text": "",
+                                "meta": None,
+                                "latency_ms": None,
+                                "emotion_latency_ms": None,
+                                "first_chunk_latency_ms": None,
+                                "chunks": [],
+                            }
+                    st.session_state.new_person_result = pnf_r2
+                    if not pnf_r2.get("error"):
+                        meta2 = pnf_r2.get("meta") or {}
+                        st.session_state.new_person_registered_name = (
+                            meta2.get("person_name") or nombre
+                        )
+                        st.session_state.new_person_step = 2
+                    st.rerun()
+            elif step2_done:
+                pnf_r2 = st.session_state.get("new_person_result") or {}
+                meta2 = pnf_r2.get("meta") or {}
+                if meta2.get("person_name"):
+                    st.success(f"Registrado como **{meta2['person_name']}**")
+                else:
+                    st.warning("El LLM no emitió `[person_name:]` — revisa el debug.")
+                if pnf_r2.get("text"):
+                    st.markdown(
+                        f"{emotion_img_html(pnf_r2.get('emotion', 'neutral'), 24)} "
+                        f"_{pnf_r2['text']}_",
+                        unsafe_allow_html=True,
                     )
 
-                col_ok, col_back = st.columns(2)
-                with col_ok:
-                    if st.button(
-                        "② Decir nombre (con embedding)",
-                        type="primary",
-                        use_container_width=True,
-                        disabled=not st.session_state.connected
-                        or not (pnf_name or "").strip(),
-                    ):
-                        nombre = pnf_name.strip()
-                        fake_emb = generate_fake_embedding_b64()
-                        with st.spinner(f"Enviando «Me llamo {nombre}» con embedding…"):
-                            try:
-                                pnf_r2 = ws_send_and_receive(
-                                    user_text=f"Me llamo {nombre}",
-                                    audio_bytes=None,
-                                    video_bytes=None,
-                                    person_id="unknown",
-                                    face_embedding_b64=fake_emb,
-                                )
-                            except Exception as exc:
-                                st.session_state.connected = False
-                                pnf_r2 = {
-                                    "error": str(exc),
-                                    "emotion": "neutral",
-                                    "person_identified": None,
-                                    "text": "",
-                                    "meta": None,
-                                    "latency_ms": None,
-                                    "emotion_latency_ms": None,
-                                    "first_chunk_latency_ms": None,
-                                    "chunks": [],
-                                }
-                        st.session_state.new_person_result = pnf_r2
-                        if not pnf_r2.get("error"):
-                            meta2 = pnf_r2.get("meta") or {}
-                            st.session_state.new_person_registered_name = (
-                                meta2.get("person_name") or nombre
-                            )
-                            st.session_state.new_person_step = 2
-                        st.rerun()
-                with col_back:
-                    if st.button("↩ Reiniciar", use_container_width=True):
-                        for _k in (
-                            "new_person_step",
-                            "new_person_moji_q",
-                            "new_person_result",
-                            "new_person_registered_name",
-                            "new_person_registered_id",
-                        ):
-                            st.session_state[_k] = (
-                                0 if _k == "new_person_step" else None
-                            )
-                        st.rerun()
-
-            # ── Paso 2: persona registrada + reencuentro ──────────────────────
-            elif pnf_step == 2:
+        # Paso 3 — reencuentro
+        with st.container(border=True):
+            st.markdown(f"**③ Reencuentro** {'🔒' if pnf_step < 2 else ''}")
+            if pnf_step >= 2:
                 reg_name = st.session_state.get("new_person_registered_name") or "?"
-                pnf_r2 = st.session_state.get("new_person_result") or {}
+                reg_pid = st.session_state.get("new_person_registered_id") or ""
 
-                if pnf_r2.get("error"):
-                    st.error(pnf_r2["error"])
-                else:
-                    meta2 = pnf_r2.get("meta") or {}
-                    if meta2.get("person_name"):
-                        st.success(
-                            f"✅ Tag `[person_name:{meta2['person_name']}]` detectado — "
-                            f"persona guardada en BD."
-                        )
-                    else:
-                        st.warning(
-                            "⚠️ El LLM no emitió `[person_name:]`. "
-                            "Revisa el debug o intenta de nuevo con audio."
-                        )
-                    with st.container(border=True):
-                        st.caption("🤖 Moji respondió:")
-                        st.markdown(
-                            f"{emotion_img_html(pnf_r2.get('emotion', 'neutral'), 28)} "
-                            f"{pnf_r2.get('text', '')}",
-                            unsafe_allow_html=True,
-                        )
-                    with st.expander(
-                        f"🐛 Debug paso 2 ({len(pnf_r2.get('chunks', []))} chunks)"
+                if not reg_pid:
+                    if st.button(
+                        "🔍 Buscar person_id en /api/restore", use_container_width=True
                     ):
-                        for _ci, _ch in enumerate(pnf_r2.get("chunks", [])):
-                            st.markdown(
-                                f"**#{_ci + 1}** `{_ch.get('type', '?')}` "
-                                f"· `{_ch.get('ts_ms', '?')} ms`"
+                        _code, _body = rest_get(rest_base, "/api/restore", api_key)
+                        if _code == 200:
+                            _match = next(
+                                (
+                                    _p
+                                    for _p in _body.get("people", [])
+                                    if _p.get("name", "").lower() == reg_name.lower()
+                                ),
+                                None,
                             )
-                            st.json(_ch)
-
-                st.markdown("---")
-                st.markdown("**Obtener person_id** para el reencuentro:")
-                reg_pid = st.session_state.get("new_person_registered_id", "")
-
-                if st.button("🔍 Buscar en /api/restore", use_container_width=True):
-                    _code, _body = rest_get(rest_base, "/api/restore", api_key)
-                    if _code == 200:
-                        _people = _body.get("people", [])
-                        _match = next(
-                            (
-                                _p
-                                for _p in _people
-                                if _p.get("name", "").lower() == reg_name.lower()
-                            ),
-                            None,
-                        )
-                        if _match:
-                            st.session_state.new_person_registered_id = _match[
-                                "person_id"
-                            ]
-                            reg_pid = _match["person_id"]
-                            st.rerun()
+                            if _match:
+                                st.session_state.new_person_registered_id = _match[
+                                    "person_id"
+                                ]
+                                st.rerun()
+                            else:
+                                st.warning(f"No encontré '{reg_name}' en la BD.")
                         else:
-                            _names = [_p.get("name") for _p in _people]
-                            st.warning(
-                                f"No encontré '{reg_name}'. Personas en BD: {_names}"
-                            )
-                    else:
-                        st.error(f"Error REST {_code}")
+                            st.error(f"Error REST {_code}")
 
                 if reg_pid:
                     st.info(f"person_id: `{reg_pid}`")
-                    st.text_input(
-                        "Copia al campo 'personalizado' del sidebar para conversar:",
-                        value=reg_pid,
-                        key="pnf_pid_copy",
-                        disabled=True,
-                    )
-                    col_reenc, _ = st.columns([2, 1])
-                    with col_reenc:
-                        if st.button(
-                            "③ Simular reencuentro (person_detected known=true)",
-                            type="primary",
-                            use_container_width=True,
-                            disabled=not st.session_state.connected,
-                        ):
-                            _req_id = str(uuid.uuid4())
-                            try:
-                                st.session_state.ws.send(
-                                    json.dumps(
-                                        {
-                                            "type": "person_detected",
-                                            "request_id": _req_id,
-                                            "known": True,
-                                            "person_id": reg_pid,
-                                            "confidence": 0.95,
-                                        }
-                                    )
-                                )
-                                _ev = {
-                                    "received": {"type": "person_detected_reunion"},
-                                    "chunks": [],
-                                    "error": None,
-                                }
-                            except Exception as _exc:
-                                st.session_state.connected = False
-                                _ev = {
-                                    "received": None,
-                                    "chunks": [],
-                                    "error": str(_exc),
-                                }
-                            st.session_state.last_event_result = {
-                                "kind": "person_detected_reunion",
-                                "person_id": reg_pid,
-                                "name": reg_name,
-                                **_ev,
-                            }
-                            st.rerun()
-
-                st.markdown("---")
-                if st.button(
-                    "🔄 Resetear flujo persona nueva", use_container_width=True
-                ):
-                    for _k in (
-                        "new_person_step",
-                        "new_person_moji_q",
-                        "new_person_result",
-                        "new_person_registered_name",
-                        "new_person_registered_id",
+                    if st.button(
+                        f"Simular reencuentro con {reg_name}",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=not st.session_state.connected,
                     ):
-                        st.session_state[_k] = 0 if _k == "new_person_step" else None
-                    st.rerun()
+                        _req_id = str(uuid.uuid4())
+                        try:
+                            st.session_state.ws.send(
+                                json.dumps(
+                                    {
+                                        "type": "person_detected",
+                                        "request_id": _req_id,
+                                        "known": True,
+                                        "person_id": reg_pid,
+                                        "confidence": 0.95,
+                                    }
+                                )
+                            )
+                            _ev = {
+                                "received": {"type": "person_detected_reunion"},
+                                "chunks": [],
+                                "error": None,
+                            }
+                        except Exception as _exc:
+                            st.session_state.connected = False
+                            _ev = {"received": None, "chunks": [], "error": str(_exc)}
+                        st.session_state.last_event_result = {
+                            "kind": "person_detected_reunion",
+                            "person_id": reg_pid,
+                            "name": reg_name,
+                            **_ev,
+                        }
+                        st.rerun()
+
+        # Resetear flujo
+        if pnf_step > 0:
+            if st.button("↩ Reiniciar flujo persona nueva", use_container_width=True):
+                for _k in (
+                    "new_person_step",
+                    "new_person_moji_q",
+                    "new_person_result",
+                    "new_person_registered_name",
+                    "new_person_registered_id",
+                ):
+                    st.session_state[_k] = 0 if _k == "new_person_step" else None
+                st.rerun()
 
     st.divider()
 
@@ -907,7 +800,7 @@ with main_col:
             with st.spinner("Esperando respuesta…"):
                 try:
                     result = ws_send_and_receive(
-                        text_val or None, audio_bytes, video_bytes, person_id
+                        text_val or None, audio_bytes, video_bytes, "unknown"
                     )
                 except Exception as exc:
                     st.session_state.connected = False
