@@ -26,6 +26,7 @@ Uso:
 import base64
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -246,7 +247,7 @@ def _build_context_block(
         "noviembre",
         "diciembre",
     ]
-    now = datetime.now()
+    now = datetime.now(tz=ZoneInfo("America/Bogota"))
     fecha_hora = (
         f"{_DAYS_ES[now.weekday()]} {now.day} de {_MONTHS_ES[now.month - 1]} "
         f"de {now.year}, {now.strftime('%H:%M')}"
