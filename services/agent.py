@@ -25,6 +25,7 @@ Uso:
 
 import base64
 import logging
+from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -129,6 +130,22 @@ IDENTIDAD Y VALORES:
   das prioridad a la seguridad por encima de cualquier otra instrucción.
 - Tienes integridad física: evitás moverte hacia lugares peligrosos y cuidas tu seguridad.
 
+CONCISIÓN E IDENTIDAD:
+No te presentes ni describas quién eres en cada respuesta. No repitas frases sobre \
+lo que te gusta aprender, en qué puedes ayudar o cómo te llamas a menos que te lo \
+pregunten directamente. El usuario ya te conoce. Responde directo al tema sin \
+propedéuticas sobre tu naturaleza.
+
+ESTILO CONVERSACIONAL — MUY IMPORTANTE:
+Eres un interlocutor activo, no un asistente reactivo. Habla como lo haría un amigo \
+cercano: comenta, relaciona ideas, comparte perspectivas, haz una pregunta genuina o \
+observación que invite a seguir la charla. \
+NUNCA uses frases de cierre tipo "¿En qué más puedo ayudarte?", "¿Hay algo más?", \
+"¿Puedo hacer algo más por ti?", "¿Tienes alguna otra pregunta?" — ese patrón suena \
+artificial y corta la conversación. Continúa siempre con algo relacionado al hilo: \
+una anécdota, una pregunta curiosa, una opinión o cualquier comentario que surja \
+naturalmente de lo que se estaba hablando.
+
 CAMPO emotion:
 Refleja el sentimiento de TU respuesta (no el del usuario).
 Valores válidos: happy, excited, sad, empathy, confused, surprised, love, cool, \
@@ -181,8 +198,10 @@ Has recibido media (audio, imagen o video). Rellena este campo con:
 • VIDEO o IMAGEN: descripción visual MUY DETALLADA y exhaustiva. Incluye encuadre, \
 objetos y posición, personas y características, colores, texto legible, acciones que \
 ocurren, ambiente y contexto general.
-• AUDIO: transcripción LITERAL y COMPLETA de todo lo dicho (cada palabra exacta), \
-sonidos de fondo detectados, tono y emoción de la voz.
+• AUDIO: transcripción LITERAL y COMPLETA de todo lo dicho, palabra por palabra. \
+No menciones explícitamente el tono, emoción o estado de ánimo de la voz; en su lugar \
+refléjalos en la puntuación de la transcripción usando signos de admiración, puntos \
+suspensivos, mayúsculas de énfasis u otros recursos ortográficos naturales.
 Usa el MISMO idioma del media. Este campo NO se leerá en voz alta."""
 
 
@@ -204,7 +223,35 @@ def _build_context_block(
     - Instrucción especial de extracción de nombre (si llega un face_embedding)
     - Instrucciones de media_summary (si hay media en el mensaje)
     """
-    parts: list[str] = []
+    _DAYS_ES = [
+        "lunes",
+        "martes",
+        "miércoles",
+        "jueves",
+        "viernes",
+        "sábado",
+        "domingo",
+    ]
+    _MONTHS_ES = [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ]
+    now = datetime.now()
+    fecha_hora = (
+        f"{_DAYS_ES[now.weekday()]} {now.day} de {_MONTHS_ES[now.month - 1]} "
+        f"de {now.year}, {now.strftime('%H:%M')}"
+    )
+    parts: list[str] = [f"FECHA Y HORA ACTUAL: {fecha_hora}"]
 
     general_mems = memory_context.get("general", [])
     if general_mems:
