@@ -252,7 +252,12 @@ def _build_context_block(
         f"{_DAYS_ES[now.weekday()]} {now.day} de {_MONTHS_ES[now.month - 1]} "
         f"de {now.year}, {now.strftime('%H:%M')}"
     )
-    parts: list[str] = [f"FECHA Y HORA ACTUAL: {fecha_hora}"]
+    parts: list[str] = [
+        f"FECHA Y HORA ACTUAL (Colombia): {fecha_hora}. "
+        "Esta es la hora y fecha REAL y AUTORITATIVA de esta interacción. "
+        "Ignora cualquier referencia de hora o fecha que aparezca en el historial previo; "
+        "solo esta es vigente."
+    ]
 
     general_mems = memory_context.get("general", [])
     if general_mems:
