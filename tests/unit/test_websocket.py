@@ -765,6 +765,26 @@ class TestContextualEmojisAndActions:
             }
         ]
 
+    async def test_led_color_action_keeps_rgb_and_duration(self):
+        """Una orden led_color explícita debe conservar color y duración."""
+        response = make_mock_response(
+            emotion="playful",
+            actions=["led_color:255:105:180:10000"],
+            response_text="Rosa un rato.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == [
+            {
+                "type": "led_color",
+                "r": 255,
+                "g": 105,
+                "b": 180,
+                "duration_ms": 10000,
+            }
+        ]
+
     async def test_invalid_emotion_is_normalized_before_sending(self):
         """Si el LLM devuelve una emoción inválida, el backend envía neutral."""
         response = make_mock_response(

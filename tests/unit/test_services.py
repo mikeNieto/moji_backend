@@ -255,12 +255,22 @@ class TestParseActionsTag:
     def test_led_color_parsed(self):
         steps, _ = parse_actions_tag("[actions:led_color:255:128:0:500]")
         assert steps[0]["action"] == "led_color"
-        # led_color tiene param R:G:B
-        assert (
-            steps[0].get("r") == 255
-            or "param" in steps[0]
-            or steps[0]["action"] == "led_color"
-        )
+        assert steps[0]["r"] == 255
+        assert steps[0]["g"] == 128
+        assert steps[0]["b"] == 0
+        assert steps[0]["duration_ms"] == 500
+
+    def test_led_color_without_duration_is_instant(self):
+        steps, _ = parse_actions_tag("[actions:led_color:10:20:30]")
+        assert steps == [
+            {
+                "action": "led_color",
+                "r": 10,
+                "g": 20,
+                "b": 30,
+                "duration_ms": 0,
+            }
+        ]
 
 
 # ── ESP32 primitives y aliases v2.0 ──────────────────────────────────────────

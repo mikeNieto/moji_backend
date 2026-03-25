@@ -8,7 +8,7 @@ v2.0 — Moji Amigo Familiar
   turn_left_deg:GRADOS:dur_ms    — giro izquierda N grados
   move_forward_cm:CM:dur_ms      — avance N centímetros
   move_backward_cm:CM:dur_ms     — retroceso N centímetros
-  led_color:R:G:B                — color LED (0-255 por canal)
+    led_color:R:G:B[:dur_ms]       — color LED (0-255 por canal), con duración opcional
 
 Gestos de alias → secuencias de primitivas:
   wave        → turn_right_deg:25:250 | turn_left_deg:50:250 | turn_right_deg:25:250
@@ -226,8 +226,10 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
         → alias de gesto con duración total override, o primitiva sin params
       accion:param:dur_ms
         → primitiva con 1 parámetro numérico (grados, cm, …)  o gesto con dur
-      led_color:R:G:B
-        → primitiva LED (3 parámetros numéricos)
+            led_color:R:G:B
+                → primitiva LED (3 parámetros numéricos, instantánea)
+            led_color:R:G:B:dur_ms
+                → primitiva LED con duración explícita
 
     Devuelve (lista_de_steps_expandidos, texto_restante).
     Si no hay tag al inicio, devuelve ([], text sin modificar).
@@ -285,8 +287,8 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
                     {"action": action, "param": parts[1], "duration_ms": 500}
                 )
 
-        elif len(parts) == 4 and action == "led_color":
-            # led_color:R:G:B  (sin dur_ms — es instantáneo)
+        elif len(parts) in {4, 5} and action == "led_color":
+            # led_color:R:G:B[:dur_ms]
             try:
                 raw_steps.append(
                     {
@@ -294,7 +296,7 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
                         "r": int(parts[1]),
                         "g": int(parts[2]),
                         "b": int(parts[3]),
-                        "duration_ms": 0,
+                        "duration_ms": int(parts[4]) if len(parts) == 5 else 0,
                     }
                 )
             except ValueError:
@@ -319,7 +321,7 @@ def action_steps_from_list(steps: list[str]) -> list[dict]:
     en steps expandidos a primitivas ESP32, listos para build_move_sequence().
 
     Cada string usa el mismo formato que parse_actions_tag internamente:
-      "wave:800", "nod:400", "turn_right_deg:45:500", "led_color:255:0:0"
+    "wave:800", "nod:400", "turn_right_deg:45:500", "led_color:255:0:0:1000"
 
     Ejemplo:
         action_steps_from_list(["wave:800", "nod:400"])

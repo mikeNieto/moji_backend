@@ -73,7 +73,7 @@ class MojiResponse(BaseModel):
             "se mueva o gesticule. Formato por paso: 'accion:param:dur_ms'. "
             "Gestos alias: wave, nod, shake_head, wiggle, pause. "
             "Primitivas: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, "
-            "move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B. "
+            "move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B:dur_ms. "
             "Si el usuario pide una acción física concreta, usa la primitiva exacta y "
             "la dirección correcta, no uses aliases ni gestos decorativos. "
             "Ejemplo: si piden avanzar, usa move_forward_cm; si piden retroceder, usa "
@@ -182,7 +182,7 @@ robot se mueva o gesticule. Si no hay movimiento, devuelve lista vacía.
 Formato de cada paso: "accion:param:dur_ms"
 Gestos alias: wave, nod, shake_head, wiggle, pause
 Primitivas ESP32: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, \
-move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B
+move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B:dur_ms
 Ejemplo de saludo con movimiento: ["wave:800","nod:400"]
 REGLA CRÍTICA: si el usuario da una orden física explícita, usa la primitiva exacta \
 que corresponde a esa orden y respeta la dirección pedida. No sustituyas una orden \
