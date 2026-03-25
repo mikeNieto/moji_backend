@@ -74,6 +74,10 @@ class MojiResponse(BaseModel):
             "Gestos alias: wave, nod, shake_head, wiggle, pause. "
             "Primitivas: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, "
             "move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B. "
+            "Si el usuario pide una acción física concreta, usa la primitiva exacta y "
+            "la dirección correcta, no uses aliases ni gestos decorativos. "
+            "Ejemplo: si piden avanzar, usa move_forward_cm; si piden retroceder, usa "
+            "move_backward_cm; si piden girar a la derecha, usa turn_right_deg. "
             "Si no hay movimiento físico, devuelve lista vacía."
         ),
     )
@@ -174,6 +178,10 @@ Gestos alias: wave, nod, shake_head, wiggle, pause
 Primitivas ESP32: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, \
 move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B
 Ejemplo de saludo con movimiento: ["wave:800","nod:400"]
+REGLA CRÍTICA: si el usuario da una orden física explícita, usa la primitiva exacta \
+que corresponde a esa orden y respeta la dirección pedida. No sustituyas una orden \
+de avanzar por un gesto, ni una orden de girar por otra dirección, ni combines \
+movimientos no solicitados.
 
 CAMPO response_text:
 Tu respuesta conversacional en prosa TTS-safe. Reglas obligatorias:

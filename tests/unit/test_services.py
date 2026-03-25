@@ -21,6 +21,7 @@ from services.expression import (
     EMOTION_TO_EMOJIS,
     VALID_TAGS,
     emotion_to_emojis,
+    normalize_emotion_tag,
     parse_emotion_tag,
     parse_emojis_tag,
 )
@@ -30,6 +31,8 @@ from services.movement import (
     build_move_sequence,
     expand_step,
     parse_actions_tag,
+    normalize_step_for_protocol,
+    protocol_steps_from_steps,
     ESP32_PRIMITIVES,
     _GESTURE_ALIASES,
 )
@@ -147,6 +150,17 @@ class TestEmotionToEmojis:
 
     def test_excited_contains_sparkle(self):
         assert "2728" in emotion_to_emojis("excited")
+
+
+class TestNormalizeEmotionTag:
+    def test_known_tag_preserved(self):
+        assert normalize_emotion_tag("happy") == "happy"
+
+    def test_unknown_tag_falls_back_to_neutral(self):
+        assert normalize_emotion_tag("superalien") == "neutral"
+
+    def test_none_falls_back_to_neutral(self):
+        assert normalize_emotion_tag(None) == "neutral"
 
 
 # ── build_move_sequence ───────────────────────────────────────────────────────
@@ -282,6 +296,39 @@ class TestMovementPrimitives:
         steps = expand_step({"action": "nod", "duration_ms": 500})
         assert all(s["action"] in ESP32_PRIMITIVES for s in steps)
 
+    def test_normalize_step_for_protocol_uses_type_and_speed(self):
+        step = normalize_step_for_protocol(
+            {"action": "move_forward_cm", "cm": 50, "duration_ms": 1500}
+        )
+        assert step == {
+            "type": "move_forward_cm",
+            "cm": 50,
+            "duration_ms": 1500,
+            "speed": 150,
+        }
+
+    def test_protocol_steps_from_steps_skips_pause(self):
+        steps = protocol_steps_from_steps(
+            [
+                {"action": "turn_right_deg", "degrees": 45, "duration_ms": 500},
+                {"action": "pause", "duration_ms": 300},
+                {"action": "turn_left_deg", "degrees": 45, "duration_ms": 500},
+            ]
+        )
+        assert len(steps) == 2
+        assert all(step["type"] != "pause" for step in steps)
+
+    def test_normalize_step_for_protocol_rejects_unknown_action(self):
+        assert (
+            normalize_step_for_protocol(
+                {"action": "dance_in_circle", "duration_ms": 1000}
+            )
+            is None
+        )
+
+    def test_normalize_step_for_protocol_requires_primitive_params(self):
+        assert normalize_step_for_protocol({"action": "move_forward_cm"}) is None
+
 
 # ── build_move_sequence ───────────────────────────────────────────────────────
 
@@ -289,12 +336,12 @@ class TestMovementPrimitives:
 class TestBuildMoveSequence:
     def test_total_duration_sum(self):
         steps = [
-            {"action": "rotate", "duration_ms": 500},
-            {"action": "pause", "duration_ms": 200},
-            {"action": "rotate", "duration_ms": 300},
+            {"action": "turn_right_deg", "degrees": 30, "duration_ms": 500},
+            {"action": "turn_left_deg", "degrees": 30, "duration_ms": 300},
         ]
         result = build_move_sequence("Giro", steps)
-        assert result["total_duration_ms"] == 1000
+        assert result["type"] == "move_sequence"
+        assert result["total_duration_ms"] == 800
 
     def test_empty_steps(self):
         result = build_move_sequence("Nada", [])
@@ -306,34 +353,40 @@ class TestBuildMoveSequence:
         assert result["description"] == "Saludo de bienvenida"
 
     def test_steps_preserved(self):
-        """build_move_sequence expande aliases; steps en resultado son primitivas."""
+        """build_move_sequence expande aliases y exporta primitivas del protocolo."""
         steps = [{"action": "wave", "duration_ms": 800}]
         result = build_move_sequence("Wave", steps)
-        # wave expande a múltiples primitivas
         assert len(result["steps"]) >= 1
         for s in result["steps"]:
-            assert s["action"] in ESP32_PRIMITIVES
+            assert s["type"] in ESP32_PRIMITIVES
+            assert "action" not in s
+            if s["type"] != "led_color":
+                assert "speed" in s
 
     def test_step_count(self):
-        steps = [{"action": "a", "duration_ms": 100}] * 5
+        steps = [{"action": "turn_right_deg", "degrees": 15, "duration_ms": 100}] * 5
         result = build_move_sequence("Five steps", steps)
         assert result["step_count"] == 5
 
     def test_missing_duration_ms_treated_as_zero(self):
         steps = [
-            {"action": "rotate", "duration_ms": 400},
-            {"action": "led_on"},  # sin duration_ms
+            {"action": "turn_right_deg", "degrees": 15, "duration_ms": 400},
+            {"action": "led_color", "r": 0, "g": 255, "b": 0},
         ]
         result = build_move_sequence("Mixed", steps)
         assert result["total_duration_ms"] == 400
 
     def test_large_sequence(self):
-        steps = [{"action": "move", "duration_ms": 1000} for _ in range(10)]
+        steps = [
+            {"action": "move_forward_cm", "cm": 30, "duration_ms": 1000}
+            for _ in range(10)
+        ]
         result = build_move_sequence("Long", steps)
         assert result["total_duration_ms"] == 10000
 
     def test_returns_dict_with_required_keys(self):
         result = build_move_sequence("Test", [])
+        assert "type" in result
         assert "description" in result
         assert "steps" in result
         assert "total_duration_ms" in result

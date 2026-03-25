@@ -132,24 +132,32 @@ class ExpressionPayload(BaseModel):
     transition: str = "bounce"
 
 
-class MoveAction(BaseModel):
-    type: Literal["move"]
-    params: dict[str, Any]
+class PrimitiveAction(BaseModel):
+    type: Literal[
+        "turn_right_deg",
+        "turn_left_deg",
+        "move_forward_cm",
+        "move_backward_cm",
+        "led_color",
+    ]
+    degrees: int | None = None
+    cm: int | None = None
+    speed: int | None = None
+    duration_ms: int = 0
+    r: int | None = None
+    g: int | None = None
+    b: int | None = None
 
 
 class MoveSequenceAction(BaseModel):
     type: Literal["move_sequence"]
     total_duration_ms: int
-    emotion_during: str
-    steps: list[dict[str, Any]]
+    steps: list[PrimitiveAction]
+    description: str | None = None
+    step_count: int | None = None
 
 
-class LightAction(BaseModel):
-    type: Literal["light"]
-    params: dict[str, Any]
-
-
-ResponseAction = MoveAction | MoveSequenceAction | LightAction
+ResponseAction = PrimitiveAction | MoveSequenceAction
 
 
 class ResponseMetaMessage(BaseModel):

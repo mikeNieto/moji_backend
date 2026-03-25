@@ -107,6 +107,16 @@ def emotion_to_emojis(tag: str) -> list[str]:
     return EMOTION_TO_EMOJIS.get(tag, EMOTION_TO_EMOJIS["neutral"])
 
 
+def normalize_emotion_tag(tag: str | None) -> str:
+    """Normaliza una emoción arbitraria al conjunto soportado por la app."""
+    if not tag:
+        return "neutral"
+    normalized = tag.strip().lower()
+    if normalized not in VALID_TAGS:
+        return "neutral"
+    return normalized
+
+
 # ── parse_emojis_tag ──────────────────────────────────────────────────────────
 
 _EMOJIS_TAG_RE = re.compile(r"^\[emojis:([^\]]+)\]\s*", re.IGNORECASE)

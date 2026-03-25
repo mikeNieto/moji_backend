@@ -43,6 +43,20 @@ ESP32_PRIMITIVES: frozenset[str] = frozenset(
     }
 )
 
+DEFAULT_TURN_SPEED = 130
+DEFAULT_FORWARD_SPEED = 150
+DEFAULT_BACKWARD_SPEED = 130
+
+PROTOCOL_PRIMITIVES: frozenset[str] = frozenset(
+    {
+        "turn_right_deg",
+        "turn_left_deg",
+        "move_forward_cm",
+        "move_backward_cm",
+        "led_color",
+    }
+)
+
 # ── Alias de gestos → secuencias de primitivas ───────────────────────────────
 # Cada alias expande a una lista de steps con "action", parámetros y "duration_ms".
 
@@ -105,6 +119,66 @@ def expand_step(step: dict) -> list[dict]:
     return [step]
 
 
+def _default_speed_for_action(action_type: str) -> int | None:
+    if action_type in {"turn_right_deg", "turn_left_deg"}:
+        return DEFAULT_TURN_SPEED
+    if action_type == "move_forward_cm":
+        return DEFAULT_FORWARD_SPEED
+    if action_type == "move_backward_cm":
+        return DEFAULT_BACKWARD_SPEED
+    return None
+
+
+def normalize_step_for_protocol(step: dict) -> dict | None:
+    """
+    Convierte un step interno con clave `action` al payload externo esperado
+    por Android/ESP32 usando `type` y velocidades por defecto.
+
+    `pause` se mantiene solo como concepto interno y no se exporta al protocolo
+    BLE porque el firmware del ESP32 no lo interpreta como primitiva directa.
+    """
+    action_type = (step.get("type") or step.get("action") or "").strip().lower()
+    if not action_type or action_type == "pause":
+        return None
+    if action_type not in PROTOCOL_PRIMITIVES:
+        return None
+
+    normalized: dict = {"type": action_type}
+
+    if "duration_ms" in step:
+        normalized["duration_ms"] = int(step.get("duration_ms", 0))
+
+    if action_type in {"turn_right_deg", "turn_left_deg"} and "degrees" in step:
+        normalized["degrees"] = int(step["degrees"])
+    elif action_type in {"turn_right_deg", "turn_left_deg"}:
+        return None
+    elif action_type in {"move_forward_cm", "move_backward_cm"} and "cm" in step:
+        normalized["cm"] = int(step["cm"])
+    elif action_type in {"move_forward_cm", "move_backward_cm"}:
+        return None
+    elif action_type == "led_color":
+        normalized["r"] = int(step.get("r", 0))
+        normalized["g"] = int(step.get("g", 0))
+        normalized["b"] = int(step.get("b", 0))
+
+    default_speed = _default_speed_for_action(action_type)
+    if default_speed is not None:
+        normalized["speed"] = int(step.get("speed", default_speed))
+
+    return normalized
+
+
+def protocol_steps_from_steps(steps: list[dict]) -> list[dict]:
+    """Expande aliases y devuelve primitivas listas para el protocolo WS/BLE."""
+    normalized_steps: list[dict] = []
+    for step in steps:
+        for expanded_step in expand_step(step):
+            normalized = normalize_step_for_protocol(expanded_step)
+            if normalized is not None:
+                normalized_steps.append(normalized)
+    return normalized_steps
+
+
 # ── build_move_sequence ───────────────────────────────────────────────────────
 
 
@@ -126,12 +200,11 @@ def build_move_sequence(description: str, steps: list[dict]) -> dict:
         - "total_duration_ms": int
         - "step_count": int
     """
-    expanded: list[dict] = []
-    for step in steps:
-        expanded.extend(expand_step(step))
+    expanded = protocol_steps_from_steps(steps)
 
     total_duration_ms: int = sum(int(s.get("duration_ms", 0)) for s in expanded)
     return {
+        "type": "move_sequence",
         "description": description,
         "steps": expanded,
         "total_duration_ms": total_duration_ms,
@@ -257,3 +330,18 @@ def action_steps_from_list(steps: list[str]) -> list[dict]:
     fake_tag = f"[actions:{'|'.join(steps)}]"
     expanded, _ = parse_actions_tag(fake_tag)
     return expanded
+
+
+def build_response_actions(steps: list[dict]) -> list[dict]:
+    """
+    Construye el payload de `response_meta.actions`.
+
+    - Una sola primitiva sale como acción directa para evitar ambigüedad.
+    - Varias primitivas salen agrupadas en una `move_sequence`.
+    """
+    protocol_steps = protocol_steps_from_steps(steps)
+    if not protocol_steps:
+        return []
+    if len(protocol_steps) == 1:
+        return protocol_steps
+    return [build_move_sequence("Movimiento sugerido por Moji", steps)]

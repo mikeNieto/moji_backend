@@ -740,8 +740,56 @@ class TestContextualEmojisAndActions:
         meta = next(m for m in sent if m["type"] == "response_meta")
         assert len(meta["actions"]) == 1
         seq = meta["actions"][0]
+        assert seq["type"] == "move_sequence"
         assert seq["step_count"] >= 1
         assert seq["total_duration_ms"] >= 800
+        assert all(step.get("type") for step in seq["steps"])
+        assert all("action" not in step for step in seq["steps"])
+
+    async def test_explicit_forward_action_stays_forward(self):
+        """Una orden explícita de avance debe salir como primitiva move_forward_cm."""
+        response = make_mock_response(
+            emotion="neutral",
+            actions=["move_forward_cm:50:1500"],
+            response_text="Avanzo un poco.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == [
+            {
+                "type": "move_forward_cm",
+                "cm": 50,
+                "duration_ms": 1500,
+                "speed": 150,
+            }
+        ]
+
+    async def test_invalid_emotion_is_normalized_before_sending(self):
+        """Si el LLM devuelve una emoción inválida, el backend envía neutral."""
+        response = make_mock_response(
+            emotion="superalien",
+            actions=[],
+            response_text="Texto válido.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        emotion = next(m for m in sent if m["type"] == "emotion")
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert emotion["emotion"] == "neutral"
+        assert "1F642" in meta["expression"]["emojis"]
+
+    async def test_invalid_action_from_llm_is_dropped(self):
+        """Acciones no soportadas por la app no deben salir en response_meta."""
+        response = make_mock_response(
+            emotion="neutral",
+            actions=["dance_in_circle:1000"],
+            response_text="No debería moverse.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == []
 
     async def test_no_contextual_emojis_falls_back_to_emotion(self):
         """Sin emojis contextuales el response_meta usa los emojis de emoción."""
@@ -939,5 +987,8 @@ class TestWsInteract:
         await ws_interact(ws)
 
         all_sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
-        types = [m["type"] for m in all_sent]
-        assert "face_scan_actions" in types
+        face_scan = next(m for m in all_sent if m["type"] == "face_scan_actions")
+        assert face_scan["request_id"] == "req-face"
+        assert len(face_scan["actions"]) >= 1
+        assert all(action.get("type") for action in face_scan["actions"])
+        assert all("action" not in action for action in face_scan["actions"])

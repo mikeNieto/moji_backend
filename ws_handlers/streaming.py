@@ -31,9 +31,13 @@ from starlette.websockets import WebSocketState
 from repositories.memory import MemoryRepository
 from repositories.people import PeopleRepository
 from services.agent import run_agent
-from services.expression import emotion_to_emojis
+from services.expression import emotion_to_emojis, normalize_emotion_tag
 from services.memory_compaction import compact_memories_async
-from services.movement import action_steps_from_list, build_move_sequence
+from services.movement import (
+    action_steps_from_list,
+    build_response_actions,
+    protocol_steps_from_steps,
+)
 from services.history import ConversationHistory
 from services.intent import classify_intent
 from ws_handlers.auth import authenticate_websocket
@@ -53,9 +57,7 @@ logger = logging.getLogger(__name__)
 # Secuencia de giro ESP32 para face_scan_mode
 _FACE_SCAN_SEQUENCE: list[dict] = [
     {"action": "turn_right_deg", "degrees": 45, "duration_ms": 500},
-    {"action": "pause", "duration_ms": 300},
     {"action": "turn_left_deg", "degrees": 90, "duration_ms": 800},
-    {"action": "pause", "duration_ms": 300},
     {"action": "turn_right_deg", "degrees": 45, "duration_ms": 500},
 ]
 
@@ -289,7 +291,7 @@ async def ws_interact(websocket: WebSocket) -> None:
             elif client_type == "face_scan_mode":
                 # Android inicia escaneo facial activo — Moji gira con secuencia predefinida.
                 req_id = msg.get("request_id") or new_request_id()
-                scan_seq = [build_move_sequence("Escaneo facial", _FACE_SCAN_SEQUENCE)]
+                scan_seq = protocol_steps_from_steps(_FACE_SCAN_SEQUENCE)
                 await _send_safe(
                     websocket,
                     make_face_scan_actions(request_id=req_id, actions=scan_seq),
@@ -415,11 +417,13 @@ async def _process_interaction(
         return
 
     # 4. Enviar emoción
+    normalized_emotion = normalize_emotion_tag(response.emotion)
+
     await _send_safe(
         websocket,
         make_emotion(
             request_id=request_id,
-            emotion=response.emotion,
+            emotion=normalized_emotion,
             person_identified=person_id,
         ),
     )
@@ -459,7 +463,7 @@ async def _process_interaction(
 
     # 9. Construir y enviar response_meta
     # Emojis: primero los contextuales del LLM, luego respaldo de emoción
-    emotion_emojis = emotion_to_emojis(response.emotion)
+    emotion_emojis = emotion_to_emojis(normalized_emotion)
     emojis = (
         (response.emojis + emotion_emojis[:2]) if response.emojis else emotion_emojis
     )
@@ -468,7 +472,7 @@ async def _process_interaction(
     if response.actions:
         steps = action_steps_from_list(response.actions)
         if steps:
-            actions = [build_move_sequence("Movimiento sugerido por Moji", steps)]
+            actions = build_response_actions(steps)
 
     processing_ms = int((time.monotonic() - start_time) * 1000)
 
