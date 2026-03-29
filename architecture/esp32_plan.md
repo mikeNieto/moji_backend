@@ -1459,216 +1459,173 @@ void RobotBLEServer::update() {
 }
 ```
 
-#### `src/main.cpp` — Test Etapa 4 (sistema completo sin cliff sensors)
+#### `src/main.cpp` — Fragmentos relevantes de Etapa 4
 
 ```cpp
-#include <Arduino.h>
-#include "config.h"
-#include "motors/MotorController.h"
-#include "sensors/BatteryMonitor.h"
-#include "sensors/DistanceSensor.h"
-#include "safety/SafetyMonitor.h"
-#include "leds/LEDController.h"
-#include "bluetooth/BLEServer.h"
-#include <ArduinoJson.h>
+enum class ActionStepKind { NONE, MOVE, STOP, LED };
 
-MotorController  motors;
-BatteryMonitor   battery;
-DistanceSensor   frontSensor(DIST_TRIG_FRONT, DIST_ECHO_FRONT, "FRONTAL");
-DistanceSensor   rearSensor (DIST_TRIG_REAR,  DIST_ECHO_REAR,  "TRASERO");
-SafetyMonitor    safety(frontSensor, rearSensor, motors);
-LEDController    led;
+struct ActionStep {
+  ActionStepKind kind = ActionStepKind::NONE;
+  Direction dir = Direction::STOP;
+  uint32_t durationMs = 0;
+  uint8_t r = 0;
+  uint8_t g = 0;
+  uint8_t b = 0;
+  const char* actionName = "idle";
+};
 
-Direction currentDir = Direction::STOP;
-bool      brainWasOnline = false;
-const char* currentAction = "idle";
+uint32_t durationFromCentimeters(float centimeters) {
+  if (centimeters <= 0.0f) return 0;
 
-const char* directionToString(Direction dir) {
-  switch (dir) {
-    case Direction::FORWARD:  return "forward";
-    case Direction::BACKWARD: return "backward";
-    case Direction::LEFT:     return "left";
-    case Direction::RIGHT:    return "right";
-    default:                  return "stop";
-  }
+  const float durationMs =
+    (centimeters * static_cast<float>(MOTION_MS_PER_10_CM_AT_SPEED_200)) / 10.0f;
+  return static_cast<uint32_t>(durationMs + 0.5f);
 }
 
-void finishMotionAction() {
-  motors.stop();
-  currentDir = Direction::STOP;
-  if (!battery.isLow()) {
-    led.setMode(LEDMode::IDLE);
-  }
+uint32_t durationFromDegrees(float degrees) {
+  if (degrees <= 0.0f) return 0;
+
+  const float durationMs =
+    (degrees * static_cast<float>(MOTION_MS_PER_90_DEG_AT_SPEED_200)) / 90.0f;
+  return static_cast<uint32_t>(durationMs + 0.5f);
 }
 
-void executePrimitiveAction(JsonObject& action) {
-  const char* type       = action["type"] | "";
-  uint8_t     speed      = action["speed"] | 0;
-  uint32_t    durationMs = action["duration_ms"] | 0;
+bool buildActionStep(JsonObject& action, ActionStep& step) {
+  const char* type = action["type"] | "";
+  const uint32_t durationMs = action["duration_ms"] | 0;
 
   if (strcmp(type, "turn_right_deg") == 0) {
-    currentAction = "turn_right_deg";
-    currentDir = Direction::RIGHT;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::RIGHT, speed, durationMs);
-    finishMotionAction();
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::RIGHT;
+    step.durationMs = durationFromDegrees(action["degrees"] | 0.0f);
+    step.actionName = "turn_right_deg";
+    return step.durationMs > 0;
+  }
 
-  } else if (strcmp(type, "turn_left_deg") == 0) {
-    currentAction = "turn_left_deg";
-    currentDir = Direction::LEFT;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::LEFT, speed, durationMs);
-    finishMotionAction();
+  if (strcmp(type, "turn_left_deg") == 0) {
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::LEFT;
+    step.durationMs = durationFromDegrees(action["degrees"] | 0.0f);
+    step.actionName = "turn_left_deg";
+    return step.durationMs > 0;
+  }
 
-  } else if (strcmp(type, "move_forward_cm") == 0) {
-    currentAction = "move_forward_cm";
-    currentDir = Direction::FORWARD;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::FORWARD, speed, durationMs);
-    finishMotionAction();
+  if (strcmp(type, "move_forward_duration") == 0) {
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::FORWARD;
+    step.durationMs = durationMs;
+    step.actionName = "move_forward_duration";
+    return true;
+  }
 
-  } else if (strcmp(type, "move_backward_cm") == 0) {
-    currentAction = "move_backward_cm";
-    currentDir = Direction::BACKWARD;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::BACKWARD, speed, durationMs);
-    finishMotionAction();
+  if (strcmp(type, "move_backward_duration") == 0) {
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::BACKWARD;
+    step.durationMs = durationMs;
+    step.actionName = "move_backward_duration";
+    return true;
+  }
 
-  } else if (strcmp(type, "led_color") == 0) {
-    currentAction = "led_color";
-    led.setCustom(action["r"] | 0, action["g"] | 0, action["b"] | 0);
-    if (durationMs > 0) {
-      delay(durationMs);
-      if (!battery.isLow()) {
-        led.setMode(LEDMode::IDLE);
-      }
+  if (strcmp(type, "move_forward_cm") == 0) {
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::FORWARD;
+    step.durationMs = durationFromCentimeters(action["cm"] | 0.0f);
+    step.actionName = "move_forward_cm";
+    return step.durationMs > 0;
+  }
+
+  if (strcmp(type, "move_backward_cm") == 0) {
+    step.kind = ActionStepKind::MOVE;
+    step.dir = Direction::BACKWARD;
+    step.durationMs = durationFromCentimeters(action["cm"] | 0.0f);
+    step.actionName = "move_backward_cm";
+    return step.durationMs > 0;
+  }
+
+  if (strcmp(type, "stop") == 0) {
+    step.kind = ActionStepKind::STOP;
+    step.actionName = "stop";
+    return true;
+  }
+
+  if (strcmp(type, "led_color") == 0) {
+    step.kind = ActionStepKind::LED;
+    step.durationMs = durationMs;
+    step.r = action["r"] | 0;
+    step.g = action["g"] | 0;
+    step.b = action["b"] | 0;
+    step.actionName = "led_color";
+    return true;
+  }
+
+  return false;
+}
+
+void setRobotIdleState() {
+  motors.stop();
+  currentDir = Direction::STOP;
+  currentAction = "idle";
+  led.setMode(LEDMode::IDLE);
+}
+
+void startActionStep(const ActionStep& step) {
+  activeStep = step;
+  activeStepRunning = true;
+  activeStepStartedAt = millis();
+  currentAction = step.actionName;
+
+  if (step.kind == ActionStepKind::MOVE) {
+    currentDir = step.dir;
+    led.setMode(LEDMode::MOVING);
+    motors.move(step.dir, MOTION_FIXED_SPEED);
+    return;
+  }
+
+  if (step.kind == ActionStepKind::STOP) {
+    setRobotIdleState();
+    return;
+  }
+
+  currentDir = Direction::STOP;
+  led.setCustom(step.r, step.g, step.b);
+}
+
+void completeActiveStep() {
+  if (activeStep.kind == ActionStepKind::MOVE || activeStep.kind == ActionStepKind::STOP) {
+    motors.stop();
+  }
+
+  if (!sequenceRunning || sequenceStepIndex >= sequenceStepCount) {
+    setRobotIdleState();
+  }
+
+  advanceActionQueue();
+}
+
+void scheduleSequence(JsonArray& steps) {
+  cancelActiveActions();
+
+  for (JsonObject stepJson : steps) {
+    ActionStep step;
+    if (buildActionStep(stepJson, step)) {
+      sequenceSteps[sequenceStepCount++] = step;
     }
   }
-}
 
-String buildTelemetry() {
-  StaticJsonDocument<768> doc;
-  doc["type"]      = "telemetry";
-  doc["timestamp"] = millis();
-
-  BatteryReading battReading = battery.read();
-
-  JsonObject batt = doc.createNestedObject("battery");
-  batt["bus_voltage"]      = battReading.busVoltage;
-  batt["load_voltage"]     = battReading.loadVoltage;
-  batt["shunt_voltage_mv"] = battReading.shuntVoltage;
-  batt["current_ma"]       = battReading.currentmA;
-  batt["power_mw"]         = battReading.powermW;
-  batt["percentage"]       = battReading.percentage;
-  batt["sensor_ok"]        = battReading.sensorOk;
-
-  JsonObject sens = doc.createNestedObject("sensors");
-  sens["distance_front"] = frontSensor.readCm();
-  sens["distance_rear"]  = rearSensor.readCm();
-
-  JsonObject motorsJson = doc.createNestedObject("motors");
-  motorsJson["state"] = directionToString(currentDir);
-  motorsJson["last_action"] = currentAction;
-
-  JsonObject heartbeat = doc.createNestedObject("heartbeat");
-  heartbeat["brain_online"] = bleServer.isBrainOnline();
-
-  JsonObject safetyJson = doc.createNestedObject("safety");
-  safetyJson["cliff_active"] = false;
-  safetyJson["obstacle_blocked"] =
-    (currentDir == Direction::FORWARD && frontSensor.isObstacle()) ||
-    (currentDir == Direction::BACKWARD && rearSensor.isObstacle());
-
-  doc["uptime"] = millis() / 1000;
-
-  String out;
-  serializeJson(doc, out);
-  return out;
-}
-
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("=== MOJI ESP32 — Etapa 4: BLE ===");
-
-  motors.begin();
-  battery.begin();
-  frontSensor.begin();
-  rearSensor.begin();
-  led.begin();
-  led.setMode(LEDMode::IDLE);
-
-  // Registrar callbacks BLE
-  bleServer.registerCallbacks(
-    // onPrimitive
-    [](JsonObject& action) {
-      executePrimitiveAction(action);
-    },
-    // onStop
-    []() {
-      currentAction = "stop";
-      currentDir = Direction::STOP;
-      motors.stop();
-      led.setMode(LEDMode::IDLE);
-    },
-    // onSequence
-    [](JsonArray& steps) {
-      for (JsonObject step : steps) {
-        executePrimitiveAction(step);
-      }
-      currentAction = "idle";
-      finishMotionAction();
-    },
-    // onTelemetryRequest
-    []() {
-      if (bleServer.isConnected()) {
-        bleServer.sendTelemetry(buildTelemetry());
-      }
-    }
-  );
-
-  bleServer.begin();
+  sequenceRunning = sequenceStepCount > 0;
+  sequenceStepIndex = 0;
+  if (sequenceRunning) advanceActionQueue();
 }
 
 void loop() {
   led.update();
   bleServer.update();
+  updateActiveAction();
 
-  // Gestión BRAIN_OFFLINE
-  bool brainOnline = bleServer.isBrainOnline();
-  if (bleServer.isConnected() && !brainOnline && brainWasOnline) {
-    Serial.println("[SAFETY] BRAIN_OFFLINE → STOP + LED ámbar");
-    motors.stop();
-    currentDir = Direction::STOP;
-    led.setMode(LEDMode::BRAIN_OFFLINE);
-  }
-  if (brainOnline && !brainWasOnline) {
-    Serial.println("[BLE] Brain recuperado");
-    led.setMode(LEDMode::IDLE);
-  }
-  brainWasOnline = brainOnline;
-
-  // Seguridad sensores de distancia
-  static unsigned long lastSafety = 0;
-  if (millis() - lastSafety > 100) {
-    if (safety.check(currentDir)) {
-      currentDir = Direction::STOP;
-      led.setMode(LEDMode::ERROR_STATE);
-    }
-    lastSafety = millis();
-  }
-
-  // Telemetría periódica
-  static unsigned long lastTelemetry = 0;
-  if (millis() - lastTelemetry > TELEMETRY_INTERVAL_MS) {
-    if (bleServer.isConnected()) {
-      bleServer.sendTelemetry(buildTelemetry());
-    }
+  if (millis() - lastTelemetry > TELEMETRY_INTERVAL_MS && bleServer.isConnected()) {
+    bleServer.sendTelemetry(buildTelemetry());
     lastTelemetry = millis();
   }
-
-  // Batería baja
-  if (battery.isLow()) led.setMode(LEDMode::LOW_BATTERY);
 }
 ```
 
@@ -1699,323 +1656,39 @@ void loop() {
 - ✅ `turn_right_deg` y `turn_left_deg` convierten `degrees` a tiempo de giro usando la constante de calibración
 - ✅ `move_forward_cm` y `move_backward_cm` convierten `cm` a tiempo de movimiento usando la constante de calibración
 - ✅ `move_forward_duration` y `move_backward_duration` usan siempre velocidad fija `200`
-- ✅ Al terminar cualquier movimiento o secuencia, el LED vuelve a IDLE (azul respiración)
+- ✅ Al terminar cualquier movimiento o secuencia, los motores se detienen y el LED vuelve a IDLE (azul respiración)
 - ✅ La telemetría llega cada 1 segundo a nRF Connect
 - ✅ El bloque `battery` incluye voltaje, corriente, potencia y estado del sensor INA219
 - ✅ BRAIN_OFFLINE se activa a los 3s sin heartbeat
 - ✅ El robot se recupera al recibir heartbeat
-- ✅ Los sensores de distancia siguen bloqueando movimientos peligrosos via BLE
-
-**Problemas comunes**:
-- *El ESP32 no aparece al escanear*: reiniciar el ESP32; verificar que `BLEDevice::init()` se llama correctamente.
-- *El robot no responde a comandos BLE*: verificar que el JSON está bien formateado (sin saltos de línea extra); nRF Connect a veces necesita enviar el dato como "UTF-8".
-- *La telemetría no llega*: verificar que la suscripción CCCD está habilitada en nRF Connect (activar "Enable CCCDs" al conectar).
-
----
-
-## 7. Etapa 5 — Sensores Cliff VL53L0X
-
-### Objetivo
-Detectar el borde de una mesa o caída de escaleras. Tres sensores VL53L0X (Time-of-Flight) miran hacia abajo desde el frente-izquierdo, frente-derecho y trasero del robot. Si alguno deja de detectar el suelo (distancia demasiado alta), el robot se detiene.
-
-### 7.1 Cómo funciona la detección de cliff
-
-Los VL53L0X son sensores de distancia láser (ToF). Montados mirando hacia abajo detectan el suelo a una distancia fija (ej. 30–50 mm). Si el robot llega al borde de una mesa o una escalera, el sensor ya no ve el suelo a esa distancia sino el vacío, y devuelve una distancia mucho mayor (o error de lectura). En ese caso el sistema dispara una parada de emergencia.
-
-```
-Robot sobre superficie plana:     Sensor lee ~40mm → OK
-Robot en borde de mesa/escalera:  Sensor lee >80mm o timeout → CLIFF DETECTADO → STOP
-```
-
-### 7.2 Problema: todos los VL53L0X comparten dirección I²C
-
-Los tres VL53L0X tienen la misma dirección I²C de fábrica (`0x29`). Para poder usarlos en el mismo bus I²C simultáneamente, se usa el pin **XSHUT** de cada sensor para inicializarlos uno por uno y asignarle una dirección única.
-
-El **INA219** ya está en ese mismo bus con dirección `0x40`, por lo que no hay conflicto mientras los VL53L0X se reasignen correctamente a `0x30`, `0x31` y `0x32`.
-
-### 7.3 Conexión VL53L0X ↔ ESP32-S3
-
-Los tres sensores comparten los pines I²C (SDA y SCL) pero cada uno tiene su propio pin XSHUT:
-
-```
-ESP32-S3        VL53L0X (los 3 comparten I²C)
-────────        ──────────────────────────────
-GPIO 8 (SDA)  ──── SDA de los 3 sensores + INA219 (bus compartido)
-GPIO 9 (SCL)  ──── SCL de los 3 sensores + INA219 (bus compartido)
-3.3V          ──── VIN de los 3 sensores
-GND           ──── GND de los 3 sensores
-
-GPIO 11       ──── XSHUT del sensor Cliff Front-Left
-GPIO 12       ──── XSHUT del sensor Cliff Front-Right
-GPIO 13       ──── XSHUT del sensor Cliff Rear
-```
-
-> **Orientación física**: los tres sensores se montan mirando hacia abajo, cerca del borde inferior del chasis. El sensor trasero detecta el borde durante el movimiento hacia atrás; los dos frontales lo hacen durante el movimiento hacia adelante.
-
-### 7.4 Inicialización con direcciones únicas
-
-```cpp
-// Secuencia de inicialización I²C para 3 VL53L0X:
-// 1. Poner todos los XSHUT en LOW → todos los sensores en reset (apagados)
-// 2. Activar sensor 1 (XSHUT = HIGH) → inicia con dirección 0x29
-// 3. Cambiar dirección de sensor 1 a 0x30
-// 4. Activar sensor 2 → cambia a 0x31
-// 5. Activar sensor 3 → queda en 0x29 (o cambiar a 0x32)
-```
 
 ### 7.5 Código — Etapa 5
 
-#### `include/sensors/CliffSensor.h`
+#### `src/main.cpp` — Fragmentos relevantes del sistema final
+
+Partir del `src/main.cpp` de la Etapa 4 y mantener exactamente el mismo pipeline de movimiento BLE: `turn_right_deg`, `turn_left_deg`, `move_forward_duration`, `move_backward_duration`, `move_forward_cm`, `move_backward_cm`, `stop`, `led_color` y `move_sequence`. En la Etapa 5 solo se añaden las validaciones de cliff y la telemetría adicional; no se reintroducen parámetros `speed` en comandos BLE ni `duration_ms` para comandos por `cm` o `degrees`.
 
 ```cpp
-#pragma once
-#include <Arduino.h>
-#include <Wire.h>
-#include <VL53L0X.h>
-#include "config.h"
-
-class CliffSensor {
-public:
-  void begin();
-  bool isCliffDetected();   // true si algún sensor detecta precipicio
-  bool readFL();            // Front-Left
-  bool readFR();            // Front-Right
-  bool readRR();            // Rear
-
-private:
-  VL53L0X _sensorFL;
-  VL53L0X _sensorFR;
-  VL53L0X _sensorRR;
-
-  bool _checkSensor(VL53L0X& sensor);
-};
-```
-
-#### `src/sensors/CliffSensor.cpp`
-
-```cpp
-#include "sensors/CliffSensor.h"
-
-// Direcciones I²C únicas para cada sensor
-#define ADDR_CLIFF_FL 0x30
-#define ADDR_CLIFF_FR 0x31
-#define ADDR_CLIFF_RR 0x32
-
-void CliffSensor::begin() {
-  Wire.begin(I2C_SDA, I2C_SCL);  // mismo bus que el INA219
-
-  // 1. Apagar todos los sensores (XSHUT LOW)
-  pinMode(XSHUT_CLIFF_FL, OUTPUT); digitalWrite(XSHUT_CLIFF_FL, LOW);
-  pinMode(XSHUT_CLIFF_FR, OUTPUT); digitalWrite(XSHUT_CLIFF_FR, LOW);
-  pinMode(XSHUT_CLIFF_RR, OUTPUT); digitalWrite(XSHUT_CLIFF_RR, LOW);
-  delay(10);
-
-  // 2. Inicializar Front-Left en 0x30
-  digitalWrite(XSHUT_CLIFF_FL, HIGH); delay(10);
-  _sensorFL.init();
-  _sensorFL.setAddress(ADDR_CLIFF_FL);
-  _sensorFL.setTimeout(100);
-  _sensorFL.startContinuous(50);
-  Serial.println("[CLIFF] Front-Left VL53L0X OK @ 0x30");
-
-  // 3. Inicializar Front-Right en 0x31
-  digitalWrite(XSHUT_CLIFF_FR, HIGH); delay(10);
-  _sensorFR.init();
-  _sensorFR.setAddress(ADDR_CLIFF_FR);
-  _sensorFR.setTimeout(100);
-  _sensorFR.startContinuous(50);
-  Serial.println("[CLIFF] Front-Right VL53L0X OK @ 0x31");
-
-  // 4. Inicializar Rear en 0x32
-  digitalWrite(XSHUT_CLIFF_RR, HIGH); delay(10);
-  _sensorRR.init();
-  _sensorRR.setAddress(ADDR_CLIFF_RR);
-  _sensorRR.setTimeout(100);
-  _sensorRR.startContinuous(50);
-  Serial.println("[CLIFF] Rear VL53L0X OK @ 0x32");
-}
-
-bool CliffSensor::_checkSensor(VL53L0X& sensor) {
-  uint16_t dist = sensor.readRangeContinuousMillimeters();
-  if (sensor.timeoutOccurred()) return true;  // Timeout = precipicio
-  return dist > CLIFF_THRESHOLD_MM;           // > 80mm = precipicio
-}
-
-bool CliffSensor::readFL() { return _checkSensor(_sensorFL); }
-bool CliffSensor::readFR() { return _checkSensor(_sensorFR); }
-bool CliffSensor::readRR() { return _checkSensor(_sensorRR); }
-
-bool CliffSensor::isCliffDetected() {
-  return readFL() || readFR() || readRR();
-}
-```
-
-#### Actualizar `SafetyMonitor` para incluir cliff
-
-```cpp
-// Actualizar include/safety/SafetyMonitor.h para añadir CliffSensor
-#pragma once
-#include <Arduino.h>
-#include "sensors/DistanceSensor.h"
-#include "sensors/CliffSensor.h"
-#include "motors/MotorController.h"
-#include "config.h"
-
-class SafetyMonitor {
-public:
-  SafetyMonitor(DistanceSensor& front, DistanceSensor& rear,
-                CliffSensor& cliff, MotorController& motors);
-  bool check(Direction currentDir);
-
-private:
-  DistanceSensor& _front;
-  DistanceSensor& _rear;
-  CliffSensor&    _cliff;
-  MotorController& _motors;
-};
-```
-
-```cpp
-// src/safety/SafetyMonitor.cpp actualizado
-#include "safety/SafetyMonitor.h"
-
-SafetyMonitor::SafetyMonitor(DistanceSensor& front, DistanceSensor& rear,
-                              CliffSensor& cliff, MotorController& motors)
-  : _front(front), _rear(rear), _cliff(cliff), _motors(motors) {}
-
-bool SafetyMonitor::check(Direction currentDir) {
-  // Prioridad 1: Cliff (siempre activo)
-  if (_cliff.isCliffDetected()) {
-    Serial.println("[SAFETY] ¡CLIFF DETECTADO! → STOP EMERGENCIA");
-    _motors.stop();
-    return true;
-  }
-  // Prioridad 2: Obstáculo frontal
-  if (currentDir == Direction::FORWARD && _front.isObstacle()) {
-    Serial.println("[SAFETY] Obstáculo FRONTAL < 10cm → STOP");
-    _motors.stop();
-    return true;
-  }
-  // Prioridad 3: Obstáculo trasero
-  if (currentDir == Direction::BACKWARD && _rear.isObstacle()) {
-    Serial.println("[SAFETY] Obstáculo TRASERO < 10cm → STOP");
-    _motors.stop();
-    return true;
-  }
-  return false;
-}
-```
-
-#### `src/main.cpp` — Sistema completo final
-
-```cpp
-#include <Arduino.h>
-#include "config.h"
-#include "motors/MotorController.h"
-#include "sensors/BatteryMonitor.h"
-#include "sensors/DistanceSensor.h"
-#include "sensors/CliffSensor.h"
-#include "safety/SafetyMonitor.h"
-#include "leds/LEDController.h"
-#include "bluetooth/BLEServer.h"
-#include <ArduinoJson.h>
-
-MotorController  motors;
-BatteryMonitor   battery;
-DistanceSensor   frontSensor(DIST_TRIG_FRONT, DIST_ECHO_FRONT, "FRONTAL");
-DistanceSensor   rearSensor (DIST_TRIG_REAR,  DIST_ECHO_REAR,  "TRASERO");
 CliffSensor      cliff;
-SafetyMonitor    safety(frontSensor, rearSensor, cliff, motors);
-LEDController    led;
-
-Direction currentDir    = Direction::STOP;
-bool      brainWasOnline = false;
-bool      cliffActive    = false;
-const char* currentAction = "idle";
-
-const char* directionToString(Direction dir) {
-  switch (dir) {
-    case Direction::FORWARD:  return "forward";
-    case Direction::BACKWARD: return "backward";
-    case Direction::LEFT:     return "left";
-    case Direction::RIGHT:    return "right";
-    default:                  return "stop";
-  }
-}
-
-void finishMotionAction() {
-  motors.stop();
-  currentDir = Direction::STOP;
-  if (!cliffActive && !battery.isLow()) {
-    led.setMode(LEDMode::IDLE);
-  }
-}
+bool             cliffActive = false;
 
 void executePrimitiveAction(JsonObject& action) {
-  const char* type       = action["type"] | "";
-  uint8_t     speed      = action["speed"] | 0;
-  uint32_t    durationMs = action["duration_ms"] | 0;
+  const char* type = action["type"] | "";
 
   if (cliffActive && strcmp(type, "led_color") != 0) {
     Serial.println("[SAFETY] Cliff activo — comando ignorado");
     return;
   }
 
-  if (strcmp(type, "turn_right_deg") == 0) {
-    currentAction = "turn_right_deg";
-    currentDir = Direction::RIGHT;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::RIGHT, speed, durationMs);
-    finishMotionAction();
-
-  } else if (strcmp(type, "turn_left_deg") == 0) {
-    currentAction = "turn_left_deg";
-    currentDir = Direction::LEFT;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::LEFT, speed, durationMs);
-    finishMotionAction();
-
-  } else if (strcmp(type, "move_forward_cm") == 0) {
-    currentAction = "move_forward_cm";
-    currentDir = Direction::FORWARD;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::FORWARD, speed, durationMs);
-    finishMotionAction();
-
-  } else if (strcmp(type, "move_backward_cm") == 0) {
-    currentAction = "move_backward_cm";
-    currentDir = Direction::BACKWARD;
-    led.setMode(LEDMode::MOVING);
-    motors.runFor(Direction::BACKWARD, speed, durationMs);
-    finishMotionAction();
-
-  } else if (strcmp(type, "led_color") == 0) {
-    currentAction = "led_color";
-    led.setCustom(action["r"] | 0, action["g"] | 0, action["b"] | 0);
-    if (durationMs > 0) {
-      delay(durationMs);
-      if (!cliffActive && !battery.isLow()) {
-        led.setMode(LEDMode::IDLE);
-      }
-    }
+  ActionStep step;
+  if (buildActionStep(action, step)) {
+    scheduleSingleAction(step);
   }
 }
 
 String buildTelemetry() {
   StaticJsonDocument<768> doc;
-  doc["type"]      = "telemetry";
-  doc["timestamp"] = millis();
-
-  BatteryReading battReading = battery.read();
-
-  JsonObject batt = doc.createNestedObject("battery");
-  batt["bus_voltage"]      = battReading.busVoltage;
-  batt["load_voltage"]     = battReading.loadVoltage;
-  batt["shunt_voltage_mv"] = battReading.shuntVoltage;
-  batt["current_ma"]       = battReading.currentmA;
-  batt["power_mw"]         = battReading.powermW;
-  batt["percentage"]       = battReading.percentage;
-  batt["sensor_ok"]        = battReading.sensorOk;
+  doc["type"] = "telemetry";
 
   JsonObject sens = doc.createNestedObject("sensors");
   sens["cliff_front_left"]  = cliff.readFL();
@@ -2024,107 +1697,47 @@ String buildTelemetry() {
   sens["distance_front"]    = frontSensor.readCm();
   sens["distance_rear"]     = rearSensor.readCm();
 
-  JsonObject motorsJson = doc.createNestedObject("motors");
-  motorsJson["state"] = directionToString(currentDir);
-  motorsJson["last_action"] = currentAction;
-
-  JsonObject hb = doc.createNestedObject("heartbeat");
-  hb["brain_online"] = bleServer.isBrainOnline();
-
   JsonObject safetyJson = doc.createNestedObject("safety");
   safetyJson["cliff_active"] = cliffActive;
-  safetyJson["obstacle_blocked"] =
-    (currentDir == Direction::FORWARD && frontSensor.isObstacle()) ||
-    (currentDir == Direction::BACKWARD && rearSensor.isObstacle());
-
-  doc["uptime"] = millis() / 1000;
-
-  String out;
-  serializeJson(doc, out);
-  return out;
+  return doc.as<String>();
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("=== MOJI ESP32 — Sistema Completo v1.1 ===");
-
-  motors.begin();
-  battery.begin();
-  frontSensor.begin();
-  rearSensor.begin();
-  cliff.begin();           // ← Nuevo en Etapa 5
-  led.begin();
-  led.setMode(LEDMode::IDLE);
+  cliff.begin();
 
   bleServer.registerCallbacks(
     [](JsonObject& action) {
       executePrimitiveAction(action);
     },
     []() {
-      currentAction = "stop";
-      currentDir = Direction::STOP;
-      motors.stop();
-      led.setMode(LEDMode::IDLE);
+      cancelActiveActions();
     },
     [](JsonArray& steps) {
-      for (JsonObject step : steps) {
-        if (cliffActive) break;
-        executePrimitiveAction(step);
-      }
-      currentAction = "idle";
-      finishMotionAction();
+      if (!cliffActive) scheduleSequence(steps);
     },
     []() {
       if (bleServer.isConnected()) bleServer.sendTelemetry(buildTelemetry());
     }
   );
-
-  bleServer.begin();
-  Serial.println("=== Sistema listo ===");
 }
 
 void loop() {
   led.update();
   bleServer.update();
+  updateActiveAction();
 
-  // BRAIN_OFFLINE
-  bool brainOnline = bleServer.isBrainOnline();
-  if (bleServer.isConnected() && !brainOnline && brainWasOnline) {
-    motors.stop(); currentDir = Direction::STOP;
-    led.setMode(LEDMode::BRAIN_OFFLINE);
-    Serial.println("[SAFETY] BRAIN_OFFLINE → STOP + LED ámbar");
-  }
-  if (brainOnline && !brainWasOnline) {
-    if (!cliffActive) led.setMode(LEDMode::IDLE);
-    Serial.println("[BLE] Brain recuperado");
-  }
-  brainWasOnline = brainOnline;
-
-  // Seguridad completa (cliff + distancia)
   static unsigned long lastSafety = 0;
   if (millis() - lastSafety > CLIFF_CHECK_INTERVAL_MS) {
-    bool emergency = safety.check(currentDir);
+    const bool emergency = safety.check(currentDir);
     if (emergency) {
-      currentDir   = Direction::STOP;
-      cliffActive  = true;
+      cancelActiveActions(false);
+      cliffActive = true;
       led.setMode(LEDMode::ERROR_STATE);
-      if (bleServer.isConnected()) bleServer.sendTelemetry(buildTelemetry());
     } else {
       cliffActive = false;
     }
     lastSafety = millis();
   }
-
-  // Telemetría periódica
-  static unsigned long lastTelemetry = 0;
-  if (millis() - lastTelemetry > TELEMETRY_INTERVAL_MS) {
-    if (bleServer.isConnected()) bleServer.sendTelemetry(buildTelemetry());
-    lastTelemetry = millis();
-  }
-
-  // Batería baja
-  if (battery.isLow() && !cliffActive) led.setMode(LEDMode::LOW_BATTERY);
 }
 ```
 
