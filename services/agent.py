@@ -70,14 +70,17 @@ class MojiResponse(BaseModel):
         default_factory=list,
         description=(
             "Pasos de movimiento físico, solo si la respuesta implica que el robot "
-            "se mueva o gesticule. Formato por paso: 'accion:param:dur_ms'. "
-            "Gestos alias: wave, nod, shake_head, wiggle, pause. "
-            "Primitivas: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, "
-            "move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B:dur_ms. "
+            "se mueva o gesticule. Formato por paso: un string corto por acción. "
+            "Gestos alias: wave:dur_ms, nod:dur_ms, shake_head:dur_ms, wiggle:dur_ms, pause:dur_ms. "
+            "Primitivas BLE: turn_right_deg:GRADOS, turn_left_deg:GRADOS, "
+            "move_forward_duration:DUR_MS, move_backward_duration:DUR_MS, "
+            "move_forward_cm:CM, move_backward_cm:CM, stop, led_color:R:G:B[:dur_ms]. "
             "Si el usuario pide una acción física concreta, usa la primitiva exacta y "
             "la dirección correcta, no uses aliases ni gestos decorativos. "
-            "Ejemplo: si piden avanzar, usa move_forward_cm; si piden retroceder, usa "
-            "move_backward_cm; si piden girar a la derecha, usa turn_right_deg. "
+            "Si pide avanzar o retroceder sin distancia explícita, usa move_forward_duration "
+            "o move_backward_duration. Si pide centímetros, usa move_forward_cm o "
+            "move_backward_cm. Si pide parar o detenerte, usa stop. Si pide girar, usa "
+            "turn_right_deg o turn_left_deg. "
             "Si no hay movimiento físico, devuelve lista vacía."
         ),
     )
@@ -179,15 +182,18 @@ Ejemplos:
 CAMPO actions:
 Lista de pasos de movimiento físico. Rellénalo SOLO si tu respuesta implica que el \
 robot se mueva o gesticule. Si no hay movimiento, devuelve lista vacía.
-Formato de cada paso: "accion:param:dur_ms"
-Gestos alias: wave, nod, shake_head, wiggle, pause
-Primitivas ESP32: turn_right_deg:GRADOS:dur_ms, turn_left_deg:GRADOS:dur_ms, \
-move_forward_cm:CM:dur_ms, move_backward_cm:CM:dur_ms, led_color:R:G:B:dur_ms
+Formato de cada paso: un string corto por acción.
+Gestos alias: wave:dur_ms, nod:dur_ms, shake_head:dur_ms, wiggle:dur_ms, pause:dur_ms
+Primitivas BLE: turn_right_deg:GRADOS, turn_left_deg:GRADOS, \
+move_forward_duration:DUR_MS, move_backward_duration:DUR_MS, \
+move_forward_cm:CM, move_backward_cm:CM, stop, led_color:R:G:B[:dur_ms]
 Ejemplo de saludo con movimiento: ["wave:800","nod:400"]
 REGLA CRÍTICA: si el usuario da una orden física explícita, usa la primitiva exacta \
 que corresponde a esa orden y respeta la dirección pedida. No sustituyas una orden \
 de avanzar por un gesto, ni una orden de girar por otra dirección, ni combines \
-movimientos no solicitados.
+movimientos no solicitados. Si piden avanzar o retroceder sin distancia explícita, \
+prefiere move_forward_duration o move_backward_duration. Si piden una distancia en \
+centímetros, usa move_forward_cm o move_backward_cm. Si piden parar, usa stop.
 
 CAMPO response_text:
 Tu respuesta conversacional en prosa TTS-safe. Reglas obligatorias:

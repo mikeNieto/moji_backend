@@ -1,14 +1,17 @@
 """
 services/movement.py — Construcción de secuencias de movimiento para el ESP32.
 
-v2.0 — Moji Amigo Familiar
+v3.0 — Moji Amigo Familiar
 
-5 primitivas ESP32:
-  turn_right_deg:GRADOS:dur_ms   — giro derecha N grados
-  turn_left_deg:GRADOS:dur_ms    — giro izquierda N grados
-  move_forward_cm:CM:dur_ms      — avance N centímetros
-  move_backward_cm:CM:dur_ms     — retroceso N centímetros
-    led_color:R:G:B[:dur_ms]       — color LED (0-255 por canal), con duración opcional
+Primitivas BLE/ESP32:
+    turn_right_deg:GRADOS             — giro derecha N grados
+    turn_left_deg:GRADOS              — giro izquierda N grados
+    move_forward_duration:DUR_MS      — avance por tiempo fijo
+    move_backward_duration:DUR_MS     — retroceso por tiempo fijo
+    move_forward_cm:CM                — avance N centímetros
+    move_backward_cm:CM               — retroceso N centímetros
+    stop                              — detener movimiento
+    led_color:R:G:B[:dur_ms]          — color LED (0-255 por canal), con duración opcional
 
 Gestos de alias → secuencias de primitivas:
   wave        → turn_right_deg:25:250 | turn_left_deg:50:250 | turn_right_deg:25:250
@@ -22,9 +25,9 @@ Gestos de alias → secuencias de primitivas:
 Uso:
     from services.movement import build_move_sequence, parse_actions_tag
 
-    steps, remainder = parse_actions_tag("[actions:wave:800|nod:400] Hola")
+    steps, remainder = parse_actions_tag("[actions:wave:800|move_forward_duration:400] Hola")
     sequence = build_move_sequence("Saludo de bienvenida", steps)
-    # sequence["total_duration_ms"] == 1200 (aprox, suma de dur_ms de todos los pasos expandidos)
+    # sequence["total_duration_ms"] == 1200 (aprox, usando duraciones explícitas o estimadas)
 """
 
 import re as _re
@@ -36,23 +39,28 @@ ESP32_PRIMITIVES: frozenset[str] = frozenset(
     {
         "turn_right_deg",
         "turn_left_deg",
+        "move_forward_duration",
+        "move_backward_duration",
         "move_forward_cm",
         "move_backward_cm",
+        "stop",
         "led_color",
         "pause",
     }
 )
 
-DEFAULT_TURN_SPEED = 130
-DEFAULT_FORWARD_SPEED = 150
-DEFAULT_BACKWARD_SPEED = 130
+TURN_MS_PER_90_DEG = 420
+MOVE_MS_PER_10_CM = 350
 
 PROTOCOL_PRIMITIVES: frozenset[str] = frozenset(
     {
         "turn_right_deg",
         "turn_left_deg",
+        "move_forward_duration",
+        "move_backward_duration",
         "move_forward_cm",
         "move_backward_cm",
+        "stop",
         "led_color",
     }
 )
@@ -87,10 +95,10 @@ _GESTURE_ALIASES: dict[str, list[dict]] = {
         {"action": "turn_right_deg", "degrees": 90, "duration_ms": 800},
     ],
     "move_forward": [
-        {"action": "move_forward_cm", "cm": 30, "duration_ms": 1000},
+        {"action": "move_forward_duration", "duration_ms": 1000},
     ],
     "move_backward": [
-        {"action": "move_backward_cm", "cm": 30, "duration_ms": 1000},
+        {"action": "move_backward_duration", "duration_ms": 1000},
     ],
     "pause": [
         {"action": "pause", "duration_ms": 500},
@@ -119,20 +127,35 @@ def expand_step(step: dict) -> list[dict]:
     return [step]
 
 
-def _default_speed_for_action(action_type: str) -> int | None:
+def _is_int(value: str) -> bool:
+    return value.isdigit()
+
+
+def estimate_step_duration_ms(step: dict) -> int:
+    """Estima la duración de una primitiva según el contrato BLE actual."""
+    action_type = (step.get("type") or step.get("action") or "").strip().lower()
+    if not action_type or action_type == "stop":
+        return 0
+
+    duration_ms = step.get("duration_ms")
+    if isinstance(duration_ms, int) and duration_ms > 0:
+        return duration_ms
+
     if action_type in {"turn_right_deg", "turn_left_deg"}:
-        return DEFAULT_TURN_SPEED
-    if action_type == "move_forward_cm":
-        return DEFAULT_FORWARD_SPEED
-    if action_type == "move_backward_cm":
-        return DEFAULT_BACKWARD_SPEED
-    return None
+        degrees = int(step.get("degrees", 0))
+        return int((degrees * TURN_MS_PER_90_DEG) / 90)
+
+    if action_type in {"move_forward_cm", "move_backward_cm"}:
+        cm = int(step.get("cm", 0))
+        return int((cm * MOVE_MS_PER_10_CM) / 10)
+
+    return 0
 
 
 def normalize_step_for_protocol(step: dict) -> dict | None:
     """
     Convierte un step interno con clave `action` al payload externo esperado
-    por Android/ESP32 usando `type` y velocidades por defecto.
+    por Android/ESP32 usando `type` y el contrato BLE actual.
 
     `pause` se mantiene solo como concepto interno y no se exporta al protocolo
     BLE porque el firmware del ESP32 no lo interpreta como primitiva directa.
@@ -145,25 +168,34 @@ def normalize_step_for_protocol(step: dict) -> dict | None:
 
     normalized: dict = {"type": action_type}
 
-    if "duration_ms" in step:
-        normalized["duration_ms"] = int(step.get("duration_ms", 0))
-
     if action_type in {"turn_right_deg", "turn_left_deg"} and "degrees" in step:
         normalized["degrees"] = int(step["degrees"])
     elif action_type in {"turn_right_deg", "turn_left_deg"}:
         return None
+    elif action_type in {"move_forward_duration", "move_backward_duration"}:
+        if "duration_ms" not in step:
+            return None
+        normalized["duration_ms"] = int(step["duration_ms"])
     elif action_type in {"move_forward_cm", "move_backward_cm"} and "cm" in step:
         normalized["cm"] = int(step["cm"])
     elif action_type in {"move_forward_cm", "move_backward_cm"}:
         return None
+    elif action_type == "stop":
+        return normalized
     elif action_type == "led_color":
         normalized["r"] = int(step.get("r", 0))
         normalized["g"] = int(step.get("g", 0))
         normalized["b"] = int(step.get("b", 0))
+        if "duration_ms" in step:
+            normalized["duration_ms"] = int(step.get("duration_ms", 0))
 
-    default_speed = _default_speed_for_action(action_type)
-    if default_speed is not None:
-        normalized["speed"] = int(step.get("speed", default_speed))
+    if "duration_ms" in step and action_type in {
+        "turn_right_deg",
+        "turn_left_deg",
+        "move_forward_cm",
+        "move_backward_cm",
+    }:
+        normalized["duration_ms"] = int(step.get("duration_ms", 0))
 
     return normalized
 
@@ -202,7 +234,7 @@ def build_move_sequence(description: str, steps: list[dict]) -> dict:
     """
     expanded = protocol_steps_from_steps(steps)
 
-    total_duration_ms: int = sum(int(s.get("duration_ms", 0)) for s in expanded)
+    total_duration_ms: int = sum(estimate_step_duration_ms(s) for s in expanded)
     return {
         "type": "move_sequence",
         "description": description,
@@ -222,12 +254,15 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
     Extrae [actions:step1|step2|...] del inicio del texto y expande aliases.
 
     Formatos de step (separados por |):
-      accion:dur_ms
-        → alias de gesto con duración total override, o primitiva sin params
-      accion:param:dur_ms
-        → primitiva con 1 parámetro numérico (grados, cm, …)  o gesto con dur
+            accion
+                → primitiva sin params, p.ej. stop
+            accion:valor
+                → alias con duración total override, o primitiva con 1 parámetro
+                     turn_*:GRADOS, move_*_duration:DUR_MS, move_*_cm:CM
+            accion:param:dur_ms
+                → formato legado soportado para turn_* y move_*_cm, o alias con override
             led_color:R:G:B
-                → primitiva LED (3 parámetros numéricos, instantánea)
+                → primitiva LED instantánea
             led_color:R:G:B:dur_ms
                 → primitiva LED con duración explícita
 
@@ -235,11 +270,11 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
     Si no hay tag al inicio, devuelve ([], text sin modificar).
 
     Ejemplos:
-        parse_actions_tag("[actions:wave:800|nod:400] Hola")
+        parse_actions_tag("[actions:wave:800|move_forward_duration:400] Hola")
         # → ([{turn_right_deg,25,250},{turn_left_deg,50,250},...,{move_forward_cm,...}], "Hola")
 
-        parse_actions_tag("[actions:turn_right_deg:45:600] Girando")
-        # → ([{action:turn_right_deg, degrees:45, duration_ms:600}], "Girando")
+        parse_actions_tag("[actions:turn_right_deg:45|stop] Girando")
+        # → ([{action:turn_right_deg, degrees:45},{action:stop}], "Girando")
 
         parse_actions_tag("Sin tag")  # → ([], "Sin tag")
     """
@@ -255,12 +290,25 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
         action = parts[0].lower()
 
         if len(parts) == 1:
-            # accion sola → usar duración por defecto del alias o 500ms
-            raw_steps.append({"action": action, "duration_ms": 500})
+            if action == "stop":
+                raw_steps.append({"action": action})
+            else:
+                raw_steps.append({"action": action, "duration_ms": 500})
 
         elif len(parts) == 2:
-            # accion:valor → si valor es número = duration_ms override; si no = parámetro 1
-            if parts[1].isdigit():
+            # accion:valor → primitiva nueva o alias con duración override
+            if action in ("turn_right_deg", "turn_left_deg") and _is_int(parts[1]):
+                raw_steps.append({"action": action, "degrees": int(parts[1])})
+            elif action in ("move_forward_cm", "move_backward_cm") and _is_int(
+                parts[1]
+            ):
+                raw_steps.append({"action": action, "cm": int(parts[1])})
+            elif action in (
+                "move_forward_duration",
+                "move_backward_duration",
+            ) and _is_int(parts[1]):
+                raw_steps.append({"action": action, "duration_ms": int(parts[1])})
+            elif _is_int(parts[1]):
                 raw_steps.append({"action": action, "duration_ms": int(parts[1])})
             else:
                 raw_steps.append(
@@ -268,15 +316,13 @@ def parse_actions_tag(text: str) -> tuple[list[dict], str]:
                 )
 
         elif len(parts) == 3:
-            # accion:param_o_dir:dur_ms  o  primitiva:valor:dur_ms
-            if parts[2].isdigit():
+            # Compatibilidad con formato legado accion:param:dur_ms
+            if _is_int(parts[2]):
                 step: dict = {"action": action, "duration_ms": int(parts[2])}
-                # Asignar el parámetro según el tipo de primitiva
-                if action in ("turn_right_deg", "turn_left_deg") and parts[1].isdigit():
+                if action in ("turn_right_deg", "turn_left_deg") and _is_int(parts[1]):
                     step["degrees"] = int(parts[1])
-                elif (
-                    action in ("move_forward_cm", "move_backward_cm")
-                    and parts[1].isdigit()
+                elif action in ("move_forward_cm", "move_backward_cm") and _is_int(
+                    parts[1]
                 ):
                     step["cm"] = int(parts[1])
                 else:
@@ -321,7 +367,8 @@ def action_steps_from_list(steps: list[str]) -> list[dict]:
     en steps expandidos a primitivas ESP32, listos para build_move_sequence().
 
     Cada string usa el mismo formato que parse_actions_tag internamente:
-    "wave:800", "nod:400", "turn_right_deg:45:500", "led_color:255:0:0:1000"
+    "wave:800", "nod:400", "turn_right_deg:45", "move_forward_duration:800",
+    "led_color:255:0:0:1000"
 
     Ejemplo:
         action_steps_from_list(["wave:800", "nod:400"])

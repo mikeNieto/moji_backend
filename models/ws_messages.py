@@ -136,13 +136,15 @@ class PrimitiveAction(BaseModel):
     type: Literal[
         "turn_right_deg",
         "turn_left_deg",
+        "move_forward_duration",
+        "move_backward_duration",
         "move_forward_cm",
         "move_backward_cm",
+        "stop",
         "led_color",
     ]
     degrees: int | None = None
     cm: int | None = None
-    speed: int | None = None
     duration_ms: int = 0
     r: int | None = None
     g: int | None = None

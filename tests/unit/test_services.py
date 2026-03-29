@@ -33,6 +33,7 @@ from services.movement import (
     parse_actions_tag,
     normalize_step_for_protocol,
     protocol_steps_from_steps,
+    estimate_step_duration_ms,
     ESP32_PRIMITIVES,
     _GESTURE_ALIASES,
 )
@@ -248,9 +249,17 @@ class TestParseActionsTag:
             assert s["action"] in ESP32_PRIMITIVES
 
     def test_step_with_esp32_primitive(self):
-        steps, _ = parse_actions_tag("[actions:turn_left_deg:90:1000]")
+        steps, _ = parse_actions_tag("[actions:turn_left_deg:90]")
         assert steps[0]["action"] == "turn_left_deg"
-        assert steps[0]["duration_ms"] == 1000
+        assert steps[0]["degrees"] == 90
+
+    def test_duration_primitive_parsed(self):
+        steps, _ = parse_actions_tag("[actions:move_forward_duration:1200]")
+        assert steps == [{"action": "move_forward_duration", "duration_ms": 1200}]
+
+    def test_stop_primitive_parsed(self):
+        steps, _ = parse_actions_tag("[actions:stop]")
+        assert steps == [{"action": "stop"}]
 
     def test_led_color_parsed(self):
         steps, _ = parse_actions_tag("[actions:led_color:255:128:0:500]")
@@ -281,7 +290,9 @@ class TestMovementPrimitives:
         assert isinstance(ESP32_PRIMITIVES, frozenset)
         assert "turn_right_deg" in ESP32_PRIMITIVES
         assert "turn_left_deg" in ESP32_PRIMITIVES
+        assert "move_forward_duration" in ESP32_PRIMITIVES
         assert "move_forward_cm" in ESP32_PRIMITIVES
+        assert "stop" in ESP32_PRIMITIVES
         assert "pause" in ESP32_PRIMITIVES
         assert "led_color" in ESP32_PRIMITIVES
 
@@ -306,16 +317,24 @@ class TestMovementPrimitives:
         steps = expand_step({"action": "nod", "duration_ms": 500})
         assert all(s["action"] in ESP32_PRIMITIVES for s in steps)
 
-    def test_normalize_step_for_protocol_uses_type_and_speed(self):
-        step = normalize_step_for_protocol(
-            {"action": "move_forward_cm", "cm": 50, "duration_ms": 1500}
-        )
+    def test_normalize_step_for_protocol_uses_type_without_speed(self):
+        step = normalize_step_for_protocol({"action": "move_forward_cm", "cm": 50})
         assert step == {
             "type": "move_forward_cm",
             "cm": 50,
-            "duration_ms": 1500,
-            "speed": 150,
         }
+
+    def test_normalize_step_for_protocol_duration_primitive(self):
+        step = normalize_step_for_protocol(
+            {"action": "move_forward_duration", "duration_ms": 1500}
+        )
+        assert step == {
+            "type": "move_forward_duration",
+            "duration_ms": 1500,
+        }
+
+    def test_normalize_step_for_protocol_stop(self):
+        assert normalize_step_for_protocol({"action": "stop"}) == {"type": "stop"}
 
     def test_protocol_steps_from_steps_skips_pause(self):
         steps = protocol_steps_from_steps(
@@ -338,6 +357,12 @@ class TestMovementPrimitives:
 
     def test_normalize_step_for_protocol_requires_primitive_params(self):
         assert normalize_step_for_protocol({"action": "move_forward_cm"}) is None
+
+    def test_estimate_step_duration_from_degrees_and_cm(self):
+        assert (
+            estimate_step_duration_ms({"type": "turn_right_deg", "degrees": 90}) == 420
+        )
+        assert estimate_step_duration_ms({"type": "move_forward_cm", "cm": 10}) == 350
 
 
 # ── build_move_sequence ───────────────────────────────────────────────────────
@@ -370,8 +395,6 @@ class TestBuildMoveSequence:
         for s in result["steps"]:
             assert s["type"] in ESP32_PRIMITIVES
             assert "action" not in s
-            if s["type"] != "led_color":
-                assert "speed" in s
 
     def test_step_count(self):
         steps = [{"action": "turn_right_deg", "degrees": 15, "duration_ms": 100}] * 5
@@ -380,11 +403,11 @@ class TestBuildMoveSequence:
 
     def test_missing_duration_ms_treated_as_zero(self):
         steps = [
-            {"action": "turn_right_deg", "degrees": 15, "duration_ms": 400},
+            {"action": "turn_right_deg", "degrees": 15},
             {"action": "led_color", "r": 0, "g": 255, "b": 0},
         ]
         result = build_move_sequence("Mixed", steps)
-        assert result["total_duration_ms"] == 400
+        assert result["total_duration_ms"] == 70
 
     def test_large_sequence(self):
         steps = [

@@ -169,9 +169,7 @@ class TestProtocolBuilders:
         assert result["capture_type"] == "video"
 
     def test_make_face_scan_actions(self):
-        actions = [
-            {"action": "turn_left_deg", "params": {"degrees": 45}, "duration_ms": 500}
-        ]
+        actions = [{"type": "turn_left_deg", "degrees": 45, "duration_ms": 500}]
         result = json.loads(make_face_scan_actions("req-f1", actions))
         assert result["type"] == "face_scan_actions"
         assert result["request_id"] == "req-f1"
@@ -750,7 +748,7 @@ class TestContextualEmojisAndActions:
         """Una orden explícita de avance debe salir como primitiva move_forward_cm."""
         response = make_mock_response(
             emotion="neutral",
-            actions=["move_forward_cm:50:1500"],
+            actions=["move_forward_cm:50"],
             response_text="Avanzo un poco.",
         )
         ws = await self._run(response)
@@ -760,10 +758,37 @@ class TestContextualEmojisAndActions:
             {
                 "type": "move_forward_cm",
                 "cm": 50,
-                "duration_ms": 1500,
-                "speed": 150,
             }
         ]
+
+    async def test_duration_action_stays_duration_based(self):
+        """Una orden explícita por tiempo debe salir como move_forward_duration."""
+        response = make_mock_response(
+            emotion="neutral",
+            actions=["move_forward_duration:1500"],
+            response_text="Avanzo un momento.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == [
+            {
+                "type": "move_forward_duration",
+                "duration_ms": 1500,
+            }
+        ]
+
+    async def test_stop_action_stays_stop(self):
+        """Una orden explícita de parar debe salir como stop."""
+        response = make_mock_response(
+            emotion="neutral",
+            actions=["stop"],
+            response_text="Me detengo.",
+        )
+        ws = await self._run(response)
+        sent = [json.loads(c[0][0]) for c in ws.send_text.call_args_list]
+        meta = next(m for m in sent if m["type"] == "response_meta")
+        assert meta["actions"] == [{"type": "stop"}]
 
     async def test_led_color_action_keeps_rgb_and_duration(self):
         """Una orden led_color explícita debe conservar color y duración."""
